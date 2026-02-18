@@ -99,7 +99,7 @@ def extract_only(pdf_file, skip_references: bool) -> str:
 
 
 def create_app() -> gr.Blocks:
-    with gr.Blocks(title="TwinkTalks", theme=gr.themes.Soft()) as app:
+    with gr.Blocks(title="TwinkTalks") as app:
         gr.Markdown("# TwinkTalks\nPDF to Speech using Qwen3-TTS")
 
         with gr.Row():
@@ -157,7 +157,7 @@ def create_app() -> gr.Blocks:
 
 def main():
     app = create_app()
-    app.launch(server_name="0.0.0.0", server_port=7860)
+    app.launch(server_name="0.0.0.0", server_port=7860, theme=gr.themes.Soft())
 
 
 if __name__ == "__main__":
