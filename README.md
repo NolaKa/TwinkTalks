@@ -41,7 +41,10 @@ python -m twinktalks paper.pdf -o output.mp3 --speaker Ryan --language English
 # Preview extracted text (no TTS)
 python -m twinktalks paper.pdf --dry-run
 
-# Limit pages
+# Specific page range
+python -m twinktalks paper.pdf --pages 3-7 -o output.wav
+
+# Limit to first N pages
 python -m twinktalks paper.pdf --max-pages 5 -o output.wav
 
 # Include references section
@@ -87,6 +90,25 @@ Uses [Qwen3-TTS-12Hz-1.7B-CustomVoice](https://huggingface.co/Qwen/Qwen3-TTS-12H
 - `dtype=float16`
 
 The model (~3.5GB) downloads automatically on first run.
+
+### Slow download?
+
+The default download can be slow. For faster speeds, pre-download the model manually:
+
+```bash
+pip install -U "huggingface_hub[cli]" hf_transfer
+HF_HUB_ENABLE_HF_TRANSFER=1 huggingface-cli download Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice
+```
+
+`hf_transfer` uses multi-threaded downloads and is significantly faster than the default.
+
+### Expected warnings on macOS
+
+```
+Warning: flash-attn is not installed. Will only run the manual PyTorch version.
+```
+
+This is normal — FlashAttention is CUDA-only. TwinkTalks uses SDPA (Scaled Dot Product Attention) instead, which works on Apple Silicon.
 
 ## Tests
 
