@@ -17,15 +17,29 @@ class ExtractionError(Exception):
     """Raised when PDF text extraction fails."""
 
 
+def get_page_count(pdf_path: str) -> int:
+    """Return the number of pages in a PDF file."""
+    path = Path(pdf_path)
+    if not path.exists():
+        raise FileNotFoundError(f"PDF not found: {pdf_path}")
+    with pdfplumber.open(path) as pdf:
+        return len(pdf.pages)
+
+
 def extract_text(
     pdf_path: str,
     skip_references: bool = True,
     max_pages: int | None = None,
+    page_range: tuple[int, int] | None = None,
 ) -> str:
     """Extract text from a PDF file.
 
     Uses pdfplumber with layout mode for multi-column support.
     Falls back to PyMuPDF if pdfplumber fails.
+
+    Args:
+        page_range: Optional (start, end) tuple, 1-indexed inclusive.
+                    Overrides max_pages if provided.
     """
     path = Path(pdf_path)
     if not path.exists():
@@ -33,10 +47,10 @@ def extract_text(
     if path.suffix.lower() != ".pdf":
         raise ValueError(f"Not a PDF file: {pdf_path}")
 
-    text = _extract_with_pdfplumber(path, max_pages)
+    text = _extract_with_pdfplumber(path, max_pages, page_range)
 
     if not text or len(text.strip()) < 50:
-        text = _extract_with_pymupdf(path, max_pages)
+        text = _extract_with_pymupdf(path, max_pages, page_range)
 
     if not text or len(text.strip()) < 50:
         raise ExtractionError(
@@ -50,12 +64,23 @@ def extract_text(
     return text
 
 
-def _extract_with_pdfplumber(path: Path, max_pages: int | None) -> str:
+def _select_pages(all_pages: list, max_pages: int | None, page_range: tuple[int, int] | None) -> list:
+    """Select pages based on range or max_pages."""
+    if page_range:
+        start, end = page_range
+        # Convert 1-indexed inclusive to 0-indexed slice
+        return all_pages[max(0, start - 1):end]
+    if max_pages:
+        return all_pages[:max_pages]
+    return all_pages
+
+
+def _extract_with_pdfplumber(path: Path, max_pages: int | None, page_range: tuple[int, int] | None = None) -> str:
     """Extract using pdfplumber with layout mode and page cropping."""
     pages_text = []
     try:
         with pdfplumber.open(path) as pdf:
-            page_list = pdf.pages[:max_pages] if max_pages else pdf.pages
+            page_list = _select_pages(pdf.pages, max_pages, page_range)
             for page in page_list:
                 # Crop to remove headers and footers
                 crop_box = (
@@ -78,7 +103,7 @@ def _extract_with_pdfplumber(path: Path, max_pages: int | None) -> str:
     return "\n\n".join(pages_text)
 
 
-def _extract_with_pymupdf(path: Path, max_pages: int | None) -> str:
+def _extract_with_pymupdf(path: Path, max_pages: int | None, page_range: tuple[int, int] | None = None) -> str:
     """Fallback extraction using PyMuPDF."""
     try:
         import fitz
@@ -88,8 +113,13 @@ def _extract_with_pymupdf(path: Path, max_pages: int | None) -> str:
     pages_text = []
     try:
         doc = fitz.open(str(path))
-        page_count = min(max_pages, len(doc)) if max_pages else len(doc)
-        for i in range(page_count):
+        if page_range:
+            start, end = page_range
+            indices = range(max(0, start - 1), min(end, len(doc)))
+        else:
+            count = min(max_pages, len(doc)) if max_pages else len(doc)
+            indices = range(count)
+        for i in indices:
             page = doc[i]
             # Crop margins
             rect = page.rect

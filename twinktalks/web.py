@@ -218,6 +218,22 @@ input[type="checkbox"] {
     gap: 1rem !important;
 }
 
+/* Page range inputs */
+.page-range {
+    gap: 1rem !important;
+    margin-top: 0.5rem !important;
+}
+.page-input input[type="number"] {
+    background: var(--bg) !important;
+    border: 2px solid var(--border) !important;
+    border-radius: 0 !important;
+    color: var(--accent) !important;
+    font-family: var(--mono) !important;
+    font-size: 1rem !important;
+    text-align: center !important;
+    width: 5rem !important;
+}
+
 /* Footer kill */
 footer { display: none !important; }
 """
@@ -232,8 +248,38 @@ def _get_engine(speaker: str):
     return _engine
 
 
+def _get_page_range(start, end, total) -> tuple[int, int] | None:
+    """Convert input values to page_range tuple. None means all pages."""
+    s = int(start) if start else 1
+    e = int(end) if end else total
+    if s <= 1 and e >= total:
+        return None
+    return (max(1, s), min(total, e))
+
+
+def on_pdf_upload(pdf_file):
+    """Called when a PDF is uploaded. Returns page count and shows page selectors."""
+    if pdf_file is None:
+        return gr.update(visible=False), gr.update(visible=False), gr.update(visible=False), "// READY"
+
+    from twinktalks.pdf_extractor import get_page_count
+    try:
+        total = get_page_count(pdf_file.name)
+        return (
+            gr.update(visible=True, value=1, maximum=total),
+            gr.update(visible=True, value=total, maximum=total),
+            gr.update(visible=True, value=f"{total}"),
+            f"// LOADED — {total} pages",
+        )
+    except Exception as e:
+        return gr.update(visible=False), gr.update(visible=False), gr.update(visible=False), f"// ERROR — {e}"
+
+
 def process_pdf(
     pdf_file,
+    page_start,
+    page_end,
+    page_info,
     speaker: str,
     language: str,
     skip_references: bool,
@@ -243,8 +289,11 @@ def process_pdf(
         return "// NO FILE", None, ""
 
     try:
+        total = int(page_info) if page_info else 9999
+        page_range = _get_page_range(page_start, page_end, total)
+
         from twinktalks.pdf_extractor import extract_text
-        text = extract_text(pdf_file.name, skip_references=skip_references)
+        text = extract_text(pdf_file.name, skip_references=skip_references, page_range=page_range)
 
         from twinktalks.text_preprocessor import preprocess
         text = preprocess(text)
@@ -253,7 +302,8 @@ def process_pdf(
         chunks = chunk_text(text)
         word_count = len(text.split())
 
-        status = f"// PROCESSING — {word_count} words, {len(chunks)} chunks"
+        pages_info = f"p.{page_range[0]}-{page_range[1]}" if page_range else "all"
+        status = f"// PROCESSING — {word_count} words, {len(chunks)} chunks ({pages_info})"
         yield status, None, text
 
         engine = _get_engine(speaker)
@@ -275,20 +325,23 @@ def process_pdf(
         yield f"// ERROR — {e}", None, ""
 
 
-def extract_only(pdf_file, skip_references: bool) -> str:
+def extract_only(pdf_file, page_start, page_end, page_info, skip_references: bool) -> str:
     """Extract and preprocess text without TTS."""
     if pdf_file is None:
         return "// NO FILE"
 
+    total = int(page_info) if page_info else 9999
+    page_range = _get_page_range(page_start, page_end, total)
+
     from twinktalks.pdf_extractor import extract_text
     from twinktalks.text_preprocessor import preprocess
 
-    text = extract_text(pdf_file.name, skip_references=skip_references)
+    text = extract_text(pdf_file.name, skip_references=skip_references, page_range=page_range)
     return preprocess(text)
 
 
 def create_app() -> gr.Blocks:
-    with gr.Blocks(title="TwinkTalks", css=CUSTOM_CSS) as app:
+    with gr.Blocks(title="TwinkTalks") as app:
 
         # Header
         gr.Markdown(
@@ -302,6 +355,27 @@ def create_app() -> gr.Blocks:
             file_types=[".pdf"],
             elem_classes=["upload-zone"],
         )
+
+        # Page range (hidden until PDF loaded)
+        with gr.Row(elem_classes=["page-range"]):
+            page_start = gr.Number(
+                value=1,
+                label="FROM PAGE",
+                minimum=1,
+                precision=0,
+                visible=False,
+                elem_classes=["page-input"],
+            )
+            page_end = gr.Number(
+                value=1,
+                label="TO PAGE",
+                minimum=1,
+                precision=0,
+                visible=False,
+                elem_classes=["page-input"],
+            )
+            # Hidden field to store total page count
+            page_info = gr.Textbox(value="", visible=False)
 
         # Options row
         with gr.Row(elem_classes=["options-row"]):
@@ -361,15 +435,21 @@ def create_app() -> gr.Blocks:
                 elem_classes=["text-preview"],
             )
 
-        # Events
+        # Events: on upload -> detect pages, show page selectors
+        pdf_input.change(
+            fn=on_pdf_upload,
+            inputs=[pdf_input],
+            outputs=[page_start, page_end, page_info, status],
+        )
+
         preview_btn.click(
             fn=extract_only,
-            inputs=[pdf_input, skip_refs],
+            inputs=[pdf_input, page_start, page_end, page_info, skip_refs],
             outputs=[text_preview],
         )
         generate_btn.click(
             fn=process_pdf,
-            inputs=[pdf_input, speaker, language, skip_refs],
+            inputs=[pdf_input, page_start, page_end, page_info, speaker, language, skip_refs],
             outputs=[status, audio_output, text_preview],
         )
 
@@ -378,7 +458,7 @@ def create_app() -> gr.Blocks:
 
 def main():
     app = create_app()
-    app.launch(server_name="0.0.0.0", server_port=7860)
+    app.launch(server_name="0.0.0.0", server_port=7860, max_file_size="100mb", css=CUSTOM_CSS)
 
 
 if __name__ == "__main__":
