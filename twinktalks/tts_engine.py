@@ -1,6 +1,7 @@
 """Qwen3-TTS wrapper for Apple Silicon (MPS backend)."""
 
 import logging
+import os
 from typing import Callable
 
 import numpy as np
@@ -25,6 +26,10 @@ from twinktalks.config import (
     INTER_PARAGRAPH_SILENCE_MS,
 )
 
+# Force HuggingFace to show download progress bars
+os.environ.setdefault("HF_HUB_ENABLE_HF_TRANSFER", "0")
+os.environ.setdefault("TRANSFORMERS_VERBOSITY", "info")
+
 logger = logging.getLogger(__name__)
 
 
@@ -47,13 +52,33 @@ class TTSEngine:
         self.model = None
 
     def load_model(self):
-        """Load the Qwen3-TTS model onto the specified device."""
+        """Load the Qwen3-TTS model onto the specified device.
+
+        On first run, downloads ~3.5GB from HuggingFace (with progress bar).
+        Subsequent runs load from cache (~/.cache/huggingface/).
+        """
         from qwen_tts import Qwen3TTSModel
 
         dtype_map = {"float16": torch.float16, "float32": torch.float32}
         dtype = dtype_map.get(DTYPE, torch.float16)
 
+        print(f"[TwinkTalks] Loading model: {self.model_id}")
+        print(f"[TwinkTalks] Device: {self.device} | Dtype: {DTYPE} | Attn: {ATTN_IMPL}")
+        print(f"[TwinkTalks] First run downloads ~3.5GB — this may take a few minutes...")
+        print(f"[TwinkTalks] Progress bar should appear below. If stuck, check your network.")
         logger.info("Loading model %s on %s...", self.model_id, self.device)
+
+        # Enable HuggingFace download logging
+        try:
+            import huggingface_hub
+            huggingface_hub.logging.set_verbosity_info()
+        except Exception:
+            pass
+        try:
+            import transformers
+            transformers.logging.set_verbosity_info()
+        except Exception:
+            pass
 
         self.model = Qwen3TTSModel.from_pretrained(
             self.model_id,
@@ -66,6 +91,7 @@ class TTSEngine:
         if self.device == "mps" and torch.backends.mps.is_available():
             torch.mps.synchronize()
 
+        print("[TwinkTalks] Model loaded successfully!")
         logger.info("Model loaded successfully.")
 
     def synthesize(

@@ -47,6 +47,12 @@ def create_parser() -> argparse.ArgumentParser:
         help="Maximum number of pages to extract",
     )
     parser.add_argument(
+        "--pages",
+        type=str,
+        default=None,
+        help="Page range to extract, e.g. '3-7' or '5-5' for single page",
+    )
+    parser.add_argument(
         "--dry-run",
         action="store_true",
         help="Extract and preprocess text only, print to stdout (no TTS)",
@@ -76,6 +82,16 @@ def main(argv: list[str] | None = None):
     else:
         output_path = Path("output") / f"{input_path.stem}.{DEFAULT_OUTPUT_FORMAT}"
 
+    # Parse page range
+    page_range = None
+    if args.pages:
+        try:
+            parts = args.pages.split("-")
+            page_range = (int(parts[0]), int(parts[1]))
+        except (ValueError, IndexError):
+            log.error("Invalid --pages format. Use e.g. '3-7'")
+            sys.exit(1)
+
     # Step 1: Extract text
     log.info("Extracting text from %s...", input_path.name)
     from twinktalks.pdf_extractor import extract_text
@@ -84,6 +100,7 @@ def main(argv: list[str] | None = None):
         str(input_path),
         skip_references=not args.no_skip_references,
         max_pages=args.max_pages,
+        page_range=page_range,
     )
     log.info("Extracted %d characters.", len(text))
 
