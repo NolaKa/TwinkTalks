@@ -13,6 +13,7 @@ from twinktalks.config import (
     MODEL_ID,
     DEFAULT_SPEAKER,
     DEFAULT_LANGUAGE,
+    DEFAULT_SPEED,
     DEVICE,
     DTYPE,
     ATTN_IMPL,
@@ -98,8 +99,12 @@ class TTSEngine:
         self,
         text: str,
         language: str = DEFAULT_LANGUAGE,
+        speed: float = DEFAULT_SPEED,
     ) -> tuple[np.ndarray, int]:
         """Generate audio for a single text chunk.
+
+        Args:
+            speed: Speaking rate, 0.5 (slow) to 2.0 (fast). Default 1.0.
 
         Returns:
             Tuple of (waveform as numpy array, sample rate).
@@ -112,6 +117,7 @@ class TTSEngine:
                 text=text,
                 language=language,
                 speaker=self.speaker,
+                speed=speed,
                 instruct="",
                 max_new_tokens=MAX_NEW_TOKENS,
                 top_k=TOP_K,
@@ -127,14 +133,20 @@ class TTSEngine:
         self,
         chunks: list[Chunk],
         language: str = DEFAULT_LANGUAGE,
+        speed: float = DEFAULT_SPEED,
         progress_callback: Callable[[int, int], None] | None = None,
+        session_dir: "Path | None" = None,
+        start_from: int = 0,
     ) -> tuple[np.ndarray, int]:
         """Generate audio for all chunks and concatenate.
 
         Args:
             chunks: List of text chunks to synthesize.
             language: Language hint for the model.
+            speed: Speaking rate (0.5-2.0).
             progress_callback: Called with (current_chunk, total_chunks).
+            session_dir: If set, save each chunk as WAV for resume support.
+            start_from: Resume from this chunk index.
 
         Returns:
             Tuple of (concatenated waveform, sample rate).
@@ -146,14 +158,25 @@ class TTSEngine:
         sample_rate = SAMPLE_RATE
         max_retries = 3
 
-        for i, chunk in enumerate(chunks):
+        # Load previously saved chunks if resuming
+        if session_dir and start_from > 0:
+            import soundfile as sf
+            for i in range(start_from):
+                chunk_path = session_dir / f"chunk_{i:04d}.wav"
+                if chunk_path.exists():
+                    data, sr = sf.read(str(chunk_path))
+                    segments.append(data.astype(np.float32))
+                    sample_rate = sr
+
+        for i in range(start_from, len(chunks)):
+            chunk = chunks[i]
             if progress_callback:
                 progress_callback(i + 1, len(chunks))
 
             waveform = None
             for attempt in range(max_retries):
                 try:
-                    waveform, sample_rate = self.synthesize(chunk.text, language)
+                    waveform, sample_rate = self.synthesize(chunk.text, language, speed)
                     break
                 except SynthesisError:
                     if attempt < max_retries - 1:
@@ -170,6 +193,12 @@ class TTSEngine:
             if waveform is None:
                 # Insert 1 second of silence as placeholder for failed chunk
                 waveform = generate_silence(1000, sample_rate)
+
+            # Save chunk for session resume
+            if session_dir:
+                import soundfile as sf
+                chunk_path = session_dir / f"chunk_{i:04d}.wav"
+                sf.write(str(chunk_path), waveform, sample_rate)
 
             segments.append(waveform)
 

@@ -31,6 +31,7 @@ def extract_text(
     skip_references: bool = True,
     max_pages: int | None = None,
     page_range: tuple[int, int] | None = None,
+    skip_tables: bool = False,
 ) -> str:
     """Extract text from a PDF file.
 
@@ -40,6 +41,7 @@ def extract_text(
     Args:
         page_range: Optional (start, end) tuple, 1-indexed inclusive.
                     Overrides max_pages if provided.
+        skip_tables: If True, exclude text inside detected tables.
     """
     path = Path(pdf_path)
     if not path.exists():
@@ -47,7 +49,7 @@ def extract_text(
     if path.suffix.lower() != ".pdf":
         raise ValueError(f"Not a PDF file: {pdf_path}")
 
-    text = _extract_with_pdfplumber(path, max_pages, page_range)
+    text = _extract_with_pdfplumber(path, max_pages, page_range, skip_tables)
 
     if not text or len(text.strip()) < 50:
         text = _extract_with_pymupdf(path, max_pages, page_range)
@@ -75,7 +77,30 @@ def _select_pages(all_pages: list, max_pages: int | None, page_range: tuple[int,
     return all_pages
 
 
-def _extract_with_pdfplumber(path: Path, max_pages: int | None, page_range: tuple[int, int] | None = None) -> str:
+def _filter_out_table_chars(page, cropped):
+    """Return a filtered page that excludes characters inside table bounding boxes."""
+    tables = cropped.find_tables()
+    if not tables:
+        return cropped
+
+    table_bboxes = [t.bbox for t in tables]
+
+    def _char_outside_tables(char):
+        cx, cy = float(char["x0"]), float(char["top"])
+        for x0, top, x1, bottom in table_bboxes:
+            if x0 <= cx <= x1 and top <= cy <= bottom:
+                return False
+        return True
+
+    return cropped.filter(_char_outside_tables)
+
+
+def _extract_with_pdfplumber(
+    path: Path,
+    max_pages: int | None,
+    page_range: tuple[int, int] | None = None,
+    skip_tables: bool = False,
+) -> str:
     """Extract using pdfplumber with layout mode and page cropping."""
     pages_text = []
     try:
@@ -90,6 +115,10 @@ def _extract_with_pdfplumber(path: Path, max_pages: int | None, page_range: tupl
                     page.height - min(PDF_CROP_MARGIN_BOTTOM, page.height * 0.15),
                 )
                 cropped = page.crop(crop_box)
+
+                if skip_tables:
+                    cropped = _filter_out_table_chars(page, cropped)
+
                 text = cropped.extract_text(
                     layout=True,
                     x_tolerance=LAYOUT_X_TOLERANCE,

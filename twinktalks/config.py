@@ -32,6 +32,17 @@ PDF_CROP_MARGIN_BOTTOM = 72    # ~1 inch
 LAYOUT_X_TOLERANCE = 3
 LAYOUT_Y_TOLERANCE = 3
 
+# Speed
+DEFAULT_SPEED = 1.0
+SPEED_MIN = 0.5
+SPEED_MAX = 2.0
+
+# Tables
+SKIP_TABLES = False
+
+# Sessions
+SESSION_DIR = "~/.twinktalks/sessions"
+
 # Audio
 SAMPLE_RATE = 24000
 DEFAULT_OUTPUT_FORMAT = "wav"

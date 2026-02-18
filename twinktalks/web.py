@@ -9,6 +9,9 @@ from twinktalks.config import (
     AVAILABLE_SPEAKERS,
     DEFAULT_SPEAKER,
     DEFAULT_LANGUAGE,
+    DEFAULT_SPEED,
+    SPEED_MIN,
+    SPEED_MAX,
 )
 
 logger = logging.getLogger(__name__)
@@ -258,21 +261,63 @@ def _get_page_range(start, end, total) -> tuple[int, int] | None:
 
 
 def on_pdf_upload(pdf_file):
-    """Called when a PDF is uploaded. Returns page count and shows page selectors."""
+    """Called when a PDF is uploaded. Returns page count, shows page selectors and TOC."""
     if pdf_file is None:
-        return gr.update(visible=False), gr.update(visible=False), gr.update(visible=False), "// READY"
+        return (
+            gr.update(visible=False), gr.update(visible=False), gr.update(visible=False),
+            gr.update(visible=False, choices=[], value=None),
+            "// READY",
+        )
 
     from twinktalks.pdf_extractor import get_page_count
     try:
         total = get_page_count(pdf_file.name)
+
+        # Try to extract TOC
+        toc_choices = ["All pages"]
+        try:
+            from twinktalks.toc import extract_toc
+            chapters = extract_toc(pdf_file.name)
+            for ch in chapters:
+                indent = "  " * (ch.level - 1)
+                pages = f"p.{ch.start_page}-{ch.end_page}"
+                toc_choices.append(f"{indent}{ch.title}  [{pages}]")
+        except Exception:
+            pass
+
+        show_toc = len(toc_choices) > 1
+
         return (
             gr.update(visible=True, value=1, maximum=total),
             gr.update(visible=True, value=total, maximum=total),
             gr.update(visible=True, value=f"{total}"),
-            f"// LOADED — {total} pages",
+            gr.update(visible=show_toc, choices=toc_choices, value="All pages"),
+            f"// LOADED — {total} pages" + (f", {len(toc_choices) - 1} chapters" if show_toc else ""),
         )
     except Exception as e:
-        return gr.update(visible=False), gr.update(visible=False), gr.update(visible=False), f"// ERROR — {e}"
+        return (
+            gr.update(visible=False), gr.update(visible=False), gr.update(visible=False),
+            gr.update(visible=False, choices=[], value=None),
+            f"// ERROR — {e}",
+        )
+
+
+def on_chapter_select(chapter_choice, pdf_file):
+    """When a chapter is selected from the dropdown, update FROM/TO page inputs."""
+    if not chapter_choice or chapter_choice == "All pages" or pdf_file is None:
+        from twinktalks.pdf_extractor import get_page_count
+        try:
+            total = get_page_count(pdf_file.name)
+            return gr.update(value=1), gr.update(value=total)
+        except Exception:
+            return gr.update(), gr.update()
+
+    # Parse page range from the choice string: "Title  [p.3-7]"
+    import re
+    match = re.search(r'\[p\.(\d+)-(\d+)\]', chapter_choice)
+    if match:
+        return gr.update(value=int(match.group(1))), gr.update(value=int(match.group(2)))
+    return gr.update(), gr.update()
 
 
 def process_pdf(
@@ -282,7 +327,9 @@ def process_pdf(
     page_info,
     speaker: str,
     language: str,
+    speed: float,
     skip_references: bool,
+    skip_tables: bool,
 ) -> tuple[str, str | None, str]:
     """Full pipeline: PDF -> text -> audio."""
     if pdf_file is None:
@@ -293,7 +340,12 @@ def process_pdf(
         page_range = _get_page_range(page_start, page_end, total)
 
         from twinktalks.pdf_extractor import extract_text
-        text = extract_text(pdf_file.name, skip_references=skip_references, page_range=page_range)
+        text = extract_text(
+            pdf_file.name,
+            skip_references=skip_references,
+            page_range=page_range,
+            skip_tables=skip_tables,
+        )
 
         from twinktalks.text_preprocessor import preprocess
         text = preprocess(text)
@@ -303,13 +355,15 @@ def process_pdf(
         word_count = len(text.split())
 
         pages_info = f"p.{page_range[0]}-{page_range[1]}" if page_range else "all"
-        status = f"// PROCESSING — {word_count} words, {len(chunks)} chunks ({pages_info})"
+        speed_info = f" @{speed}x" if speed != 1.0 else ""
+        status = f"// PROCESSING — {word_count} words, {len(chunks)} chunks ({pages_info}){speed_info}"
         yield status, None, text
 
         engine = _get_engine(speaker)
         waveform, sample_rate = engine.synthesize_chunks(
             chunks,
             language=language,
+            speed=speed,
             progress_callback=lambda c, t: None,
         )
 
@@ -325,7 +379,7 @@ def process_pdf(
         yield f"// ERROR — {e}", None, ""
 
 
-def extract_only(pdf_file, page_start, page_end, page_info, skip_references: bool) -> str:
+def extract_only(pdf_file, page_start, page_end, page_info, skip_references: bool, skip_tables: bool) -> str:
     """Extract and preprocess text without TTS."""
     if pdf_file is None:
         return "// NO FILE"
@@ -336,7 +390,12 @@ def extract_only(pdf_file, page_start, page_end, page_info, skip_references: boo
     from twinktalks.pdf_extractor import extract_text
     from twinktalks.text_preprocessor import preprocess
 
-    text = extract_text(pdf_file.name, skip_references=skip_references, page_range=page_range)
+    text = extract_text(
+        pdf_file.name,
+        skip_references=skip_references,
+        page_range=page_range,
+        skip_tables=skip_tables,
+    )
     return preprocess(text)
 
 
@@ -377,6 +436,14 @@ def create_app() -> gr.Blocks:
             # Hidden field to store total page count
             page_info = gr.Textbox(value="", visible=False)
 
+        # Chapter selector (hidden until PDF with TOC loaded)
+        chapter_dropdown = gr.Dropdown(
+            choices=["All pages"],
+            value="All pages",
+            label="CHAPTER",
+            visible=False,
+        )
+
         # Options row
         with gr.Row(elem_classes=["options-row"]):
             speaker = gr.Dropdown(
@@ -391,9 +458,22 @@ def create_app() -> gr.Blocks:
                 value=DEFAULT_LANGUAGE,
                 label="LANGUAGE",
             )
+            speed_slider = gr.Slider(
+                minimum=SPEED_MIN,
+                maximum=SPEED_MAX,
+                value=DEFAULT_SPEED,
+                step=0.1,
+                label="SPEED",
+            )
+
+        with gr.Row(elem_classes=["options-row"]):
             skip_refs = gr.Checkbox(
                 value=True,
                 label="SKIP REFERENCES",
+            )
+            skip_tables = gr.Checkbox(
+                value=False,
+                label="SKIP TABLES",
             )
 
         # Actions
@@ -435,21 +515,28 @@ def create_app() -> gr.Blocks:
                 elem_classes=["text-preview"],
             )
 
-        # Events: on upload -> detect pages, show page selectors
+        # Events: on upload -> detect pages, show page selectors and TOC
         pdf_input.change(
             fn=on_pdf_upload,
             inputs=[pdf_input],
-            outputs=[page_start, page_end, page_info, status],
+            outputs=[page_start, page_end, page_info, chapter_dropdown, status],
+        )
+
+        # Chapter selection -> update page range
+        chapter_dropdown.change(
+            fn=on_chapter_select,
+            inputs=[chapter_dropdown, pdf_input],
+            outputs=[page_start, page_end],
         )
 
         preview_btn.click(
             fn=extract_only,
-            inputs=[pdf_input, page_start, page_end, page_info, skip_refs],
+            inputs=[pdf_input, page_start, page_end, page_info, skip_refs, skip_tables],
             outputs=[text_preview],
         )
         generate_btn.click(
             fn=process_pdf,
-            inputs=[pdf_input, page_start, page_end, page_info, speaker, language, skip_refs],
+            inputs=[pdf_input, page_start, page_end, page_info, speaker, language, speed_slider, skip_refs, skip_tables],
             outputs=[status, audio_output, text_preview],
         )
 
