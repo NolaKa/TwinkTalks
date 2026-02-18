@@ -5,6 +5,10 @@ PDF to Speech converter powered by [Qwen3-TTS](https://huggingface.co/Qwen/Qwen3
 ## Features
 
 - **Smart PDF extraction** — handles multi-column academic papers with correct reading order (pdfplumber + PyMuPDF fallback)
+- **Table of contents & chapters** — auto-detects TOC, select specific chapters by name or index
+- **Skip tables** — excludes diagnostic tables, DSM criteria, etc. from speech output
+- **Speed control** — adjustable speaking rate (0.5x-2.0x) via native Qwen3-TTS parameter
+- **Session resume** — saves progress per chunk, resume interrupted generation from where it stopped
 - **Academic text cleanup** — removes citations, figure captions, URLs, expands abbreviations for natural TTS output
 - **Sentence-aware chunking** — splits long documents into optimal chunks for stable generation
 - **9 preset voices** — Aiden, Ryan, Aria, Claire, Emma, Leo, Mia, Noah, Sophia
@@ -49,6 +53,23 @@ python -m twinktalks paper.pdf --max-pages 5 -o output.wav
 
 # Include references section
 python -m twinktalks paper.pdf --no-skip-references -o output.wav
+
+# Speed control (0.5 = slow, 2.0 = fast)
+python -m twinktalks paper.pdf --speed 0.8 -o output.wav
+
+# Skip tables and diagrams
+python -m twinktalks paper.pdf --skip-tables -o output.wav
+
+# Show table of contents
+python -m twinktalks paper.pdf --show-toc
+
+# Extract specific chapter (by name or index)
+python -m twinktalks paper.pdf --chapter "Introduction" -o output.wav
+python -m twinktalks paper.pdf --chapter 3 -o output.wav
+
+# Resume interrupted session
+python -m twinktalks paper.pdf --list-sessions
+python -m twinktalks paper.pdf --resume <session-id> -o output.wav
 ```
 
 ### Web UI
@@ -58,7 +79,7 @@ python -m twinktalks.web
 # Open http://localhost:7860
 ```
 
-Upload a PDF, pick a voice, hit Generate.
+Upload a PDF, pick a voice, hit Generate. Features: chapter selector (auto-detected from PDF TOC), speed slider, skip tables/references checkboxes, page range selection.
 
 ## Project Structure
 
@@ -70,6 +91,8 @@ twinktalks/
 ├── chunker.py            # Sentence-aware text splitting
 ├── tts_engine.py         # Qwen3-TTS wrapper (MPS/SDPA)
 ├── audio_utils.py        # Audio concatenation & export
+├── toc.py                # Table of contents extraction (PyMuPDF)
+├── session.py            # Resumable session management
 ├── cli.py                # Command-line interface
 └── web.py                # Gradio web interface
 ```
