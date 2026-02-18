@@ -1,0 +1,165 @@
+"""Qwen3-TTS wrapper for Apple Silicon (MPS backend)."""
+
+import logging
+from typing import Callable
+
+import numpy as np
+import torch
+
+from twinktalks.audio_utils import generate_silence, get_duration_seconds
+from twinktalks.chunker import Chunk
+from twinktalks.config import (
+    MODEL_ID,
+    DEFAULT_SPEAKER,
+    DEFAULT_LANGUAGE,
+    DEVICE,
+    DTYPE,
+    ATTN_IMPL,
+    MAX_NEW_TOKENS,
+    TOP_K,
+    TOP_P,
+    TEMPERATURE,
+    REPETITION_PENALTY,
+    SAMPLE_RATE,
+    INTER_SENTENCE_SILENCE_MS,
+    INTER_PARAGRAPH_SILENCE_MS,
+)
+
+logger = logging.getLogger(__name__)
+
+
+class SynthesisError(Exception):
+    """Raised when TTS synthesis fails."""
+
+
+class TTSEngine:
+    """Wrapper around Qwen3-TTS CustomVoice model."""
+
+    def __init__(
+        self,
+        model_id: str = MODEL_ID,
+        speaker: str = DEFAULT_SPEAKER,
+        device: str = DEVICE,
+    ):
+        self.model_id = model_id
+        self.speaker = speaker
+        self.device = device
+        self.model = None
+
+    def load_model(self):
+        """Load the Qwen3-TTS model onto the specified device."""
+        from qwen_tts import Qwen3TTSModel
+
+        dtype_map = {"float16": torch.float16, "float32": torch.float32}
+        dtype = dtype_map.get(DTYPE, torch.float16)
+
+        logger.info("Loading model %s on %s...", self.model_id, self.device)
+
+        self.model = Qwen3TTSModel.from_pretrained(
+            self.model_id,
+            device_map=self.device,
+            dtype=dtype,
+            attn_implementation=ATTN_IMPL,
+        )
+
+        # Sync MPS device after loading
+        if self.device == "mps" and torch.backends.mps.is_available():
+            torch.mps.synchronize()
+
+        logger.info("Model loaded successfully.")
+
+    def synthesize(
+        self,
+        text: str,
+        language: str = DEFAULT_LANGUAGE,
+    ) -> tuple[np.ndarray, int]:
+        """Generate audio for a single text chunk.
+
+        Returns:
+            Tuple of (waveform as numpy array, sample rate).
+        """
+        if self.model is None:
+            self.load_model()
+
+        try:
+            wavs, sr = self.model.generate_custom_voice(
+                text=text,
+                language=language,
+                speaker=self.speaker,
+                instruct="",
+                max_new_tokens=MAX_NEW_TOKENS,
+                top_k=TOP_K,
+                top_p=TOP_P,
+                temperature=TEMPERATURE,
+                repetition_penalty=REPETITION_PENALTY,
+            )
+            return wavs[0], sr
+        except RuntimeError as e:
+            raise SynthesisError(f"TTS generation failed: {e}") from e
+
+    def synthesize_chunks(
+        self,
+        chunks: list[Chunk],
+        language: str = DEFAULT_LANGUAGE,
+        progress_callback: Callable[[int, int], None] | None = None,
+    ) -> tuple[np.ndarray, int]:
+        """Generate audio for all chunks and concatenate.
+
+        Args:
+            chunks: List of text chunks to synthesize.
+            language: Language hint for the model.
+            progress_callback: Called with (current_chunk, total_chunks).
+
+        Returns:
+            Tuple of (concatenated waveform, sample rate).
+        """
+        if not chunks:
+            return np.array([], dtype=np.float32), SAMPLE_RATE
+
+        segments: list[np.ndarray] = []
+        sample_rate = SAMPLE_RATE
+        max_retries = 3
+
+        for i, chunk in enumerate(chunks):
+            if progress_callback:
+                progress_callback(i + 1, len(chunks))
+
+            waveform = None
+            for attempt in range(max_retries):
+                try:
+                    waveform, sample_rate = self.synthesize(chunk.text, language)
+                    break
+                except SynthesisError:
+                    if attempt < max_retries - 1:
+                        logger.warning(
+                            "Chunk %d/%d failed (attempt %d/%d), retrying...",
+                            i + 1, len(chunks), attempt + 1, max_retries,
+                        )
+                    else:
+                        logger.error(
+                            "Chunk %d/%d failed after %d attempts, inserting silence.",
+                            i + 1, len(chunks), max_retries,
+                        )
+
+            if waveform is None:
+                # Insert 1 second of silence as placeholder for failed chunk
+                waveform = generate_silence(1000, sample_rate)
+
+            segments.append(waveform)
+
+        # Concatenate with silences
+        if len(segments) == 1:
+            return segments[0], sample_rate
+
+        parts = []
+        for i, seg in enumerate(segments):
+            parts.append(seg)
+            if i < len(segments) - 1:
+                silence_ms = (
+                    INTER_PARAGRAPH_SILENCE_MS
+                    if chunks[i].is_paragraph_end
+                    else INTER_SENTENCE_SILENCE_MS
+                )
+                parts.append(generate_silence(silence_ms, sample_rate))
+
+        return np.concatenate(parts), sample_rate
