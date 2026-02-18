@@ -1,8 +1,7 @@
-"""Gradio web UI for TwinkTalks."""
+"""Gradio web UI for TwinkTalks — cyber brutalist aesthetic."""
 
 import logging
 import tempfile
-from pathlib import Path
 
 import gradio as gr
 
@@ -14,8 +13,214 @@ from twinktalks.config import (
 
 logger = logging.getLogger(__name__)
 
-# Lazy-loaded engine (shared across requests)
 _engine = None
+
+CUSTOM_CSS = """
+@import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Inter:wght@300;400;700;900&display=swap');
+
+:root {
+    --bg: #0a0a0a;
+    --surface: #111111;
+    --border: #2a2a2a;
+    --accent: #c8ff00;
+    --accent-dim: #4a5f00;
+    --text: #e0e0e0;
+    --text-dim: #666666;
+    --danger: #ff3333;
+    --mono: 'Space Mono', 'SF Mono', monospace;
+    --sans: 'Inter', system-ui, sans-serif;
+}
+
+body, .gradio-container {
+    background: var(--bg) !important;
+    font-family: var(--sans) !important;
+    max-width: 900px !important;
+    margin: 0 auto !important;
+}
+
+/* Header */
+.header-block {
+    border-bottom: 3px solid var(--accent) !important;
+    padding: 2rem 0 1.5rem !important;
+    margin-bottom: 2rem !important;
+    background: none !important;
+}
+.header-block h1 {
+    font-family: var(--mono) !important;
+    font-size: 2.4rem !important;
+    font-weight: 700 !important;
+    color: var(--accent) !important;
+    letter-spacing: -0.02em !important;
+    margin: 0 !important;
+    line-height: 1 !important;
+}
+.header-block p {
+    font-family: var(--mono) !important;
+    font-size: 0.8rem !important;
+    color: var(--text-dim) !important;
+    margin: 0.5rem 0 0 !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.15em !important;
+}
+
+/* All panels / containers */
+.gr-panel, .gr-box, .gr-form, .gr-input-label,
+div[class*="block"], div[class*="wrap"] {
+    border-radius: 0 !important;
+}
+
+/* Input containers */
+.input-section {
+    border: 2px solid var(--border) !important;
+    background: var(--surface) !important;
+    padding: 1.5rem !important;
+    border-radius: 0 !important;
+}
+.input-section:hover {
+    border-color: var(--accent-dim) !important;
+}
+
+/* Labels */
+label, .gr-input-label, span[data-testid="block-label"] {
+    font-family: var(--mono) !important;
+    font-size: 0.7rem !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.12em !important;
+    color: var(--text-dim) !important;
+}
+
+/* File upload */
+.upload-zone {
+    border: 2px dashed var(--border) !important;
+    background: var(--bg) !important;
+    border-radius: 0 !important;
+    padding: 3rem 2rem !important;
+    transition: border-color 0.2s !important;
+}
+.upload-zone:hover {
+    border-color: var(--accent) !important;
+}
+
+/* Dropdowns & inputs */
+select, input[type="text"], textarea,
+.gr-input, .gr-text-input, .gr-dropdown {
+    background: var(--bg) !important;
+    border: 2px solid var(--border) !important;
+    border-radius: 0 !important;
+    color: var(--text) !important;
+    font-family: var(--mono) !important;
+    font-size: 0.85rem !important;
+    padding: 0.6rem 0.8rem !important;
+}
+select:focus, input:focus, textarea:focus {
+    border-color: var(--accent) !important;
+    outline: none !important;
+    box-shadow: none !important;
+}
+
+/* Checkbox */
+input[type="checkbox"] {
+    accent-color: var(--accent) !important;
+}
+
+/* Buttons */
+.generate-btn {
+    background: var(--accent) !important;
+    color: var(--bg) !important;
+    border: none !important;
+    border-radius: 0 !important;
+    font-family: var(--mono) !important;
+    font-weight: 700 !important;
+    font-size: 0.85rem !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.1em !important;
+    padding: 0.9rem 2rem !important;
+    cursor: pointer !important;
+    transition: all 0.15s !important;
+}
+.generate-btn:hover {
+    background: #dfff33 !important;
+    transform: translateY(-1px) !important;
+}
+.preview-btn {
+    background: transparent !important;
+    color: var(--text-dim) !important;
+    border: 2px solid var(--border) !important;
+    border-radius: 0 !important;
+    font-family: var(--mono) !important;
+    font-weight: 400 !important;
+    font-size: 0.8rem !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.1em !important;
+    padding: 0.9rem 1.5rem !important;
+    cursor: pointer !important;
+    transition: all 0.15s !important;
+}
+.preview-btn:hover {
+    border-color: var(--text-dim) !important;
+    color: var(--text) !important;
+}
+
+/* Status bar */
+.status-bar textarea {
+    font-family: var(--mono) !important;
+    font-size: 0.8rem !important;
+    background: var(--bg) !important;
+    border: 2px solid var(--border) !important;
+    border-left: 3px solid var(--accent) !important;
+    border-radius: 0 !important;
+    color: var(--accent) !important;
+    padding: 0.8rem 1rem !important;
+}
+
+/* Audio player */
+.audio-output {
+    border: 2px solid var(--border) !important;
+    background: var(--surface) !important;
+    border-radius: 0 !important;
+    padding: 1rem !important;
+}
+
+/* Accordion */
+.gr-accordion {
+    border: 2px solid var(--border) !important;
+    border-radius: 0 !important;
+    background: var(--surface) !important;
+}
+.gr-accordion summary, .gr-accordion button {
+    font-family: var(--mono) !important;
+    font-size: 0.75rem !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.12em !important;
+    color: var(--text-dim) !important;
+}
+
+/* Text preview */
+.text-preview textarea {
+    font-family: var(--mono) !important;
+    font-size: 0.8rem !important;
+    line-height: 1.6 !important;
+    background: var(--bg) !important;
+    border: 1px solid var(--border) !important;
+    border-radius: 0 !important;
+    color: var(--text) !important;
+}
+
+/* Section divider */
+.divider {
+    border-top: 1px solid var(--border) !important;
+    margin: 1.5rem 0 !important;
+    background: none !important;
+}
+
+/* Options row */
+.options-row {
+    gap: 1rem !important;
+}
+
+/* Footer kill */
+footer { display: none !important; }
+"""
 
 
 def _get_engine(speaker: str):
@@ -35,61 +240,45 @@ def process_pdf(
 ) -> tuple[str, str | None, str]:
     """Full pipeline: PDF -> text -> audio."""
     if pdf_file is None:
-        return "No PDF uploaded.", None, ""
+        return "// NO FILE", None, ""
 
     try:
-        # Extract
         from twinktalks.pdf_extractor import extract_text
+        text = extract_text(pdf_file.name, skip_references=skip_references)
 
-        text = extract_text(
-            pdf_file.name,
-            skip_references=skip_references,
-        )
-
-        # Preprocess
         from twinktalks.text_preprocessor import preprocess
-
         text = preprocess(text)
 
-        # Chunk
         from twinktalks.chunker import chunk_text
-
         chunks = chunk_text(text)
         word_count = len(text.split())
 
-        status = f"Extracted {word_count} words, {len(chunks)} chunks. Generating speech..."
+        status = f"// PROCESSING — {word_count} words, {len(chunks)} chunks"
         yield status, None, text
 
-        # Synthesize
         engine = _get_engine(speaker)
-
-        def progress(current, total):
-            pass  # Gradio doesn't support live updates in yield mode easily
-
         waveform, sample_rate = engine.synthesize_chunks(
             chunks,
             language=language,
-            progress_callback=progress,
+            progress_callback=lambda c, t: None,
         )
 
-        # Save to temp file
         from twinktalks.audio_utils import save_audio, get_duration_seconds
-
         tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
         save_audio(waveform, tmp.name, sample_rate)
         duration = get_duration_seconds(waveform, sample_rate)
 
-        status = f"Done! {duration:.1f}s of audio ({word_count} words, {len(chunks)} chunks)"
+        status = f"// DONE — {duration:.1f}s audio / {word_count} words / {len(chunks)} chunks"
         yield status, tmp.name, text
 
     except Exception as e:
-        yield f"Error: {e}", None, ""
+        yield f"// ERROR — {e}", None, ""
 
 
 def extract_only(pdf_file, skip_references: bool) -> str:
     """Extract and preprocess text without TTS."""
     if pdf_file is None:
-        return "No PDF uploaded."
+        return "// NO FILE"
 
     from twinktalks.pdf_extractor import extract_text
     from twinktalks.text_preprocessor import preprocess
@@ -99,53 +288,85 @@ def extract_only(pdf_file, skip_references: bool) -> str:
 
 
 def create_app() -> gr.Blocks:
-    with gr.Blocks(title="TwinkTalks") as app:
-        gr.Markdown("# TwinkTalks\nPDF to Speech using Qwen3-TTS")
+    with gr.Blocks(title="TwinkTalks", css=CUSTOM_CSS) as app:
 
-        with gr.Row():
-            with gr.Column(scale=1):
-                pdf_input = gr.File(
-                    label="Upload PDF",
-                    file_types=[".pdf"],
-                )
-                speaker = gr.Dropdown(
-                    choices=AVAILABLE_SPEAKERS,
-                    value=DEFAULT_SPEAKER,
-                    label="Speaker",
-                )
-                language = gr.Dropdown(
-                    choices=["Auto", "English", "Chinese", "Japanese", "Korean",
-                             "German", "French", "Russian", "Portuguese",
-                             "Spanish", "Italian"],
-                    value=DEFAULT_LANGUAGE,
-                    label="Language",
-                )
-                skip_refs = gr.Checkbox(
-                    value=True,
-                    label="Skip References section",
-                )
+        # Header
+        gr.Markdown(
+            "<h1>TWINKTALKS_</h1><p>pdf &rarr; speech // qwen3-tts</p>",
+            elem_classes=["header-block"],
+        )
 
-                with gr.Row():
-                    preview_btn = gr.Button("Preview Text")
-                    generate_btn = gr.Button("Generate Speech", variant="primary")
+        # Upload
+        pdf_input = gr.File(
+            label="INPUT",
+            file_types=[".pdf"],
+            elem_classes=["upload-zone"],
+        )
 
-            with gr.Column(scale=1):
-                status = gr.Textbox(label="Status", interactive=False)
-                audio_output = gr.Audio(label="Generated Audio", type="filepath")
-
-        with gr.Accordion("Extracted Text Preview", open=False):
-            text_preview = gr.Textbox(
-                label="Preprocessed text",
-                lines=20,
-                interactive=False,
+        # Options row
+        with gr.Row(elem_classes=["options-row"]):
+            speaker = gr.Dropdown(
+                choices=AVAILABLE_SPEAKERS,
+                value=DEFAULT_SPEAKER,
+                label="VOICE",
+            )
+            language = gr.Dropdown(
+                choices=["Auto", "English", "Chinese", "Japanese", "Korean",
+                         "German", "French", "Russian", "Portuguese",
+                         "Spanish", "Italian"],
+                value=DEFAULT_LANGUAGE,
+                label="LANGUAGE",
+            )
+            skip_refs = gr.Checkbox(
+                value=True,
+                label="SKIP REFERENCES",
             )
 
+        # Actions
+        with gr.Row():
+            preview_btn = gr.Button(
+                "PREVIEW TEXT",
+                elem_classes=["preview-btn"],
+            )
+            generate_btn = gr.Button(
+                "GENERATE",
+                variant="primary",
+                elem_classes=["generate-btn"],
+            )
+
+        # Divider
+        gr.HTML("<div class='divider'></div>")
+
+        # Status
+        status = gr.Textbox(
+            label="STATUS",
+            interactive=False,
+            value="// READY",
+            elem_classes=["status-bar"],
+        )
+
+        # Audio output
+        audio_output = gr.Audio(
+            label="OUTPUT",
+            type="filepath",
+            elem_classes=["audio-output"],
+        )
+
+        # Text preview
+        with gr.Accordion("EXTRACTED TEXT", open=False):
+            text_preview = gr.Textbox(
+                label="",
+                lines=15,
+                interactive=False,
+                elem_classes=["text-preview"],
+            )
+
+        # Events
         preview_btn.click(
             fn=extract_only,
             inputs=[pdf_input, skip_refs],
             outputs=[text_preview],
         )
-
         generate_btn.click(
             fn=process_pdf,
             inputs=[pdf_input, speaker, language, skip_refs],
@@ -157,7 +378,7 @@ def create_app() -> gr.Blocks:
 
 def main():
     app = create_app()
-    app.launch(server_name="0.0.0.0", server_port=7860, theme=gr.themes.Soft())
+    app.launch(server_name="0.0.0.0", server_port=7860)
 
 
 if __name__ == "__main__":
