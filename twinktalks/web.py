@@ -269,15 +269,15 @@ def on_pdf_upload(pdf_file):
             "// READY",
         )
 
-    from twinktalks.pdf_extractor import get_page_count
+    from twinktalks.extractor import get_item_count, extract_toc as get_toc
     try:
-        total = get_page_count(pdf_file.name)
+        total = get_item_count(pdf_file.name)
+        is_epub = pdf_file.name.lower().endswith(".epub")
 
         # Try to extract TOC
-        toc_choices = ["All pages"]
+        toc_choices = ["All chapters" if is_epub else "All pages"]
         try:
-            from twinktalks.toc import extract_toc
-            chapters = extract_toc(pdf_file.name)
+            chapters = get_toc(pdf_file.name)
             for ch in chapters:
                 indent = "  " * (ch.level - 1)
                 pages = f"p.{ch.start_page}-{ch.end_page}"
@@ -304,10 +304,10 @@ def on_pdf_upload(pdf_file):
 
 def on_chapter_select(chapter_choice, pdf_file):
     """When a chapter is selected from the dropdown, update FROM/TO page inputs."""
-    if not chapter_choice or chapter_choice == "All pages" or pdf_file is None:
-        from twinktalks.pdf_extractor import get_page_count
+    if not chapter_choice or chapter_choice in ("All pages", "All chapters") or pdf_file is None:
+        from twinktalks.extractor import get_item_count
         try:
-            total = get_page_count(pdf_file.name)
+            total = get_item_count(pdf_file.name)
             return gr.update(value=1), gr.update(value=total)
         except Exception:
             return gr.update(), gr.update()
@@ -339,7 +339,7 @@ def process_pdf(
         total = int(page_info) if page_info else 9999
         page_range = _get_page_range(page_start, page_end, total)
 
-        from twinktalks.pdf_extractor import extract_text
+        from twinktalks.extractor import extract_text
         text = extract_text(
             pdf_file.name,
             skip_references=skip_references,
@@ -360,20 +360,27 @@ def process_pdf(
         yield status, None, text
 
         engine = _get_engine(speaker)
-        waveform, sample_rate = engine.synthesize_chunks(
-            chunks,
-            language=language,
-            speed=speed,
-            progress_callback=lambda c, t: None,
-        )
-
         from twinktalks.audio_utils import save_audio, get_duration_seconds
-        tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
-        save_audio(waveform, tmp.name, sample_rate)
-        duration = get_duration_seconds(waveform, sample_rate)
+        import os
 
-        status = f"// DONE — {duration:.1f}s audio / {word_count} words / {len(chunks)} chunks"
-        yield status, tmp.name, text
+        prev_tmp = None
+        for cumulative, sample_rate, current, total_chunks in engine.synthesize_chunks_streaming(
+            chunks, language=language, speed=speed,
+        ):
+            tmp_path = tempfile.mktemp(suffix=".wav")
+            save_audio(cumulative, tmp_path, sample_rate)
+            duration = get_duration_seconds(cumulative, sample_rate)
+
+            if prev_tmp and os.path.exists(prev_tmp):
+                os.unlink(prev_tmp)
+            prev_tmp = tmp_path
+
+            if current < total_chunks:
+                status = f"// GENERATING — chunk {current}/{total_chunks} — {duration:.1f}s"
+            else:
+                status = f"// DONE — {duration:.1f}s audio / {word_count} words / {total_chunks} chunks"
+
+            yield status, tmp_path, text
 
     except Exception as e:
         yield f"// ERROR — {e}", None, ""
@@ -387,7 +394,7 @@ def extract_only(pdf_file, page_start, page_end, page_info, skip_references: boo
     total = int(page_info) if page_info else 9999
     page_range = _get_page_range(page_start, page_end, total)
 
-    from twinktalks.pdf_extractor import extract_text
+    from twinktalks.extractor import extract_text
     from twinktalks.text_preprocessor import preprocess
 
     text = extract_text(
@@ -411,7 +418,7 @@ def create_app() -> gr.Blocks:
         # Upload
         pdf_input = gr.File(
             label="INPUT",
-            file_types=[".pdf"],
+            file_types=[".pdf", ".epub"],
             elem_classes=["upload-zone"],
         )
 

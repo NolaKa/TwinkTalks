@@ -202,19 +202,90 @@ class TTSEngine:
 
             segments.append(waveform)
 
-        # Concatenate with silences
-        if len(segments) == 1:
-            return segments[0], sample_rate
+        return _concatenate_segments(segments, chunks, sample_rate), sample_rate
 
-        parts = []
-        for i, seg in enumerate(segments):
-            parts.append(seg)
-            if i < len(segments) - 1:
-                silence_ms = (
-                    INTER_PARAGRAPH_SILENCE_MS
-                    if chunks[i].is_paragraph_end
-                    else INTER_SENTENCE_SILENCE_MS
-                )
-                parts.append(generate_silence(silence_ms, sample_rate))
+    def synthesize_chunks_streaming(
+        self,
+        chunks: list[Chunk],
+        language: str = DEFAULT_LANGUAGE,
+        speed: float = DEFAULT_SPEED,
+        session_dir: "Path | None" = None,
+        start_from: int = 0,
+    ):
+        """Generate audio chunk by chunk, yielding cumulative waveform after each.
 
-        return np.concatenate(parts), sample_rate
+        Yields:
+            Tuple of (cumulative_waveform, sample_rate, chunk_index, total_chunks).
+        """
+        if not chunks:
+            return
+
+        segments: list[np.ndarray] = []
+        sample_rate = SAMPLE_RATE
+        max_retries = 3
+
+        # Load previously saved chunks if resuming
+        if session_dir and start_from > 0:
+            import soundfile as sf
+            for i in range(start_from):
+                chunk_path = session_dir / f"chunk_{i:04d}.wav"
+                if chunk_path.exists():
+                    data, sr = sf.read(str(chunk_path))
+                    segments.append(data.astype(np.float32))
+                    sample_rate = sr
+
+        for i in range(start_from, len(chunks)):
+            chunk = chunks[i]
+
+            waveform = None
+            for attempt in range(max_retries):
+                try:
+                    waveform, sample_rate = self.synthesize(chunk.text, language, speed)
+                    break
+                except SynthesisError:
+                    if attempt < max_retries - 1:
+                        logger.warning(
+                            "Chunk %d/%d failed (attempt %d/%d), retrying...",
+                            i + 1, len(chunks), attempt + 1, max_retries,
+                        )
+                    else:
+                        logger.error(
+                            "Chunk %d/%d failed after %d attempts, inserting silence.",
+                            i + 1, len(chunks), max_retries,
+                        )
+
+            if waveform is None:
+                waveform = generate_silence(1000, sample_rate)
+
+            if session_dir:
+                import soundfile as sf
+                chunk_path = session_dir / f"chunk_{i:04d}.wav"
+                sf.write(str(chunk_path), waveform, sample_rate)
+
+            segments.append(waveform)
+
+            cumulative = _concatenate_segments(segments, chunks[:len(segments)], sample_rate)
+            yield cumulative, sample_rate, i + 1, len(chunks)
+
+
+def _concatenate_segments(
+    segments: list[np.ndarray],
+    chunks: list[Chunk],
+    sample_rate: int,
+) -> np.ndarray:
+    """Concatenate audio segments with silence gaps between them."""
+    if len(segments) == 1:
+        return segments[0]
+
+    parts = []
+    for i, seg in enumerate(segments):
+        parts.append(seg)
+        if i < len(segments) - 1:
+            silence_ms = (
+                INTER_PARAGRAPH_SILENCE_MS
+                if chunks[i].is_paragraph_end
+                else INTER_SENTENCE_SILENCE_MS
+            )
+            parts.append(generate_silence(silence_ms, sample_rate))
+
+    return np.concatenate(parts)

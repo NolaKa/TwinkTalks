@@ -85,6 +85,15 @@ def remove_latex_commands(text: str) -> str:
     return text
 
 
+def truncate_at_references(text: str) -> str:
+    """Truncate text at the References/Bibliography section."""
+    pattern = r"\n\s*(?:References|Bibliography|REFERENCES|BIBLIOGRAPHY)\s*\n"
+    match = re.search(pattern, text)
+    if match:
+        return text[: match.start()].strip()
+    return text
+
+
 def preprocess(text: str) -> str:
     """Full preprocessing pipeline: raw academic text -> TTS-ready text."""
     text = remove_figure_table_captions(text)

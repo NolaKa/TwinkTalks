@@ -170,8 +170,5 @@ def _extract_with_pymupdf(path: Path, max_pages: int | None, page_range: tuple[i
 
 def _truncate_at_references(text: str) -> str:
     """Truncate text at the References/Bibliography section."""
-    pattern = r"\n\s*(?:References|Bibliography|REFERENCES|BIBLIOGRAPHY)\s*\n"
-    match = re.search(pattern, text)
-    if match:
-        return text[: match.start()].strip()
-    return text
+    from twinktalks.text_preprocessor import truncate_at_references
+    return truncate_at_references(text)
