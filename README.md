@@ -1,11 +1,13 @@
 # TwinkTalks
 
-PDF to Speech converter powered by [Qwen3-TTS](https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice). Extracts text from academic papers (including multi-column layouts) and generates natural-sounding speech.
+PDF & EPUB to Speech converter powered by [Qwen3-TTS](https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice). Extracts text from academic papers, textbooks, and e-books, then generates natural-sounding speech.
 
 ## Features
 
-- **Smart PDF extraction** — handles multi-column academic papers with correct reading order (pdfplumber + PyMuPDF fallback)
-- **Table of contents & chapters** — auto-detects TOC, select specific chapters by name or index
+- **PDF + EPUB support** — handles multi-column academic papers (pdfplumber + PyMuPDF) and e-books (ebooklib)
+- **Streaming playback** — web UI plays audio progressively as chunks are generated, no waiting for the full file
+- **Batch processing** — `--chapters all` generates a separate audio file per chapter
+- **Table of contents & chapters** — auto-detects TOC from PDF or EPUB, select specific chapters by name or index
 - **Skip tables** — excludes diagnostic tables, DSM criteria, etc. from speech output
 - **Speed control** — adjustable speaking rate (0.5x-2.0x) via native Qwen3-TTS parameter
 - **Session resume** — saves progress per chunk, resume interrupted generation from where it stopped
@@ -36,8 +38,9 @@ source .venv/bin/activate
 ### CLI
 
 ```bash
-# Basic: PDF to WAV
+# Basic: PDF or EPUB to WAV
 python -m twinktalks paper.pdf -o output.wav
+python -m twinktalks book.epub -o output.wav
 
 # Choose voice and language
 python -m twinktalks paper.pdf -o output.mp3 --speaker Ryan --language English
@@ -67,6 +70,10 @@ python -m twinktalks paper.pdf --show-toc
 python -m twinktalks paper.pdf --chapter "Introduction" -o output.wav
 python -m twinktalks paper.pdf --chapter 3 -o output.wav
 
+# Batch: generate one audio file per chapter
+python -m twinktalks textbook.pdf --chapters all
+python -m twinktalks textbook.epub --chapters all -o output_dir/
+
 # Resume interrupted session
 python -m twinktalks paper.pdf --list-sessions
 python -m twinktalks paper.pdf --resume <session-id> -o output.wav
@@ -79,27 +86,29 @@ python -m twinktalks.web
 # Open http://localhost:7860
 ```
 
-Upload a PDF, pick a voice, hit Generate. Features: chapter selector (auto-detected from PDF TOC), speed slider, skip tables/references checkboxes, page range selection.
+Upload a PDF or EPUB, pick a voice, hit Generate. Audio streams progressively as chunks are generated. Features: chapter selector (auto-detected TOC), speed slider, skip tables/references checkboxes, page range selection.
 
 ## Project Structure
 
 ```
 twinktalks/
 ├── config.py             # Model, speaker, chunking, audio settings
+├── extractor.py          # File type router (PDF/EPUB dispatch)
 ├── pdf_extractor.py      # PDF text extraction (pdfplumber + PyMuPDF)
+├── epub_extractor.py     # EPUB text extraction (ebooklib + BeautifulSoup)
 ├── text_preprocessor.py  # Academic text cleanup for TTS
 ├── chunker.py            # Sentence-aware text splitting
-├── tts_engine.py         # Qwen3-TTS wrapper (MPS/SDPA)
+├── tts_engine.py         # Qwen3-TTS wrapper (MPS/SDPA) + streaming
 ├── audio_utils.py        # Audio concatenation & export
 ├── toc.py                # Table of contents extraction (PyMuPDF)
 ├── session.py            # Resumable session management
-├── cli.py                # Command-line interface
-└── web.py                # Gradio web interface
+├── cli.py                # CLI with batch chapter processing
+└── web.py                # Gradio web UI with streaming playback
 ```
 
 ## How It Works
 
-1. **Extract** — pdfplumber reads PDF with `layout=True` for multi-column support, crops headers/footers, truncates at References
+1. **Extract** — pdfplumber reads PDF with `layout=True` for multi-column support (or ebooklib for EPUB), crops headers/footers, truncates at References
 2. **Preprocess** — removes `[1,2]` citations, `(Author et al., 2024)`, figure/table captions, URLs, DOIs, section numbers; expands abbreviations (`e.g.` → `for example`)
 3. **Chunk** — splits into ~500 character chunks at sentence boundaries, preserving paragraph structure
 4. **Synthesize** — Qwen3-TTS generates audio chunk by chunk with retry logic
