@@ -362,12 +362,18 @@ def process_pdf(
         engine = _get_engine(speaker)
         from twinktalks.audio_utils import save_audio, get_duration_seconds
         import os
+        from pathlib import Path
+
+        # Build a readable filename from the source file
+        stem = Path(pdf_file.name).stem
+        tmp_dir = tempfile.mkdtemp()
 
         prev_tmp = None
         for cumulative, sample_rate, current, total_chunks in engine.synthesize_chunks_streaming(
             chunks, language=language, speed=speed,
         ):
-            tmp_path = tempfile.mktemp(suffix=".wav")
+            # Use readable name; append chunk count to force Gradio cache refresh
+            tmp_path = os.path.join(tmp_dir, f"{stem}_{current}of{total_chunks}.wav")
             save_audio(cumulative, tmp_path, sample_rate)
             duration = get_duration_seconds(cumulative, sample_rate)
 
@@ -377,10 +383,14 @@ def process_pdf(
 
             if current < total_chunks:
                 status = f"// GENERATING — chunk {current}/{total_chunks} — {duration:.1f}s"
+                yield status, tmp_path, text
             else:
+                # Final file gets a clean name without chunk suffix
+                final_path = os.path.join(tmp_dir, f"{stem}.wav")
+                os.rename(tmp_path, final_path)
+                prev_tmp = None
                 status = f"// DONE — {duration:.1f}s audio / {word_count} words / {total_chunks} chunks"
-
-            yield status, tmp_path, text
+                yield status, final_path, text
 
     except Exception as e:
         yield f"// ERROR — {e}", None, ""
