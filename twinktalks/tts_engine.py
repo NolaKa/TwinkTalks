@@ -7,7 +7,7 @@ from typing import Callable
 import numpy as np
 import torch
 
-from twinktalks.audio_utils import generate_silence, get_duration_seconds
+from twinktalks.audio_utils import generate_silence, get_duration_seconds, compute_chunk_offsets
 from twinktalks.chunker import Chunk
 from twinktalks.config import (
     MODEL_ID,
@@ -140,7 +140,7 @@ class TTSEngine:
         progress_callback: Callable[[int, int], None] | None = None,
         session_dir: "Path | None" = None,
         start_from: int = 0,
-    ) -> tuple[np.ndarray, int]:
+    ) -> tuple[np.ndarray, int, list[int]]:
         """Generate audio for all chunks and concatenate.
 
         Args:
@@ -152,10 +152,10 @@ class TTSEngine:
             start_from: Resume from this chunk index.
 
         Returns:
-            Tuple of (concatenated waveform, sample rate).
+            Tuple of (concatenated waveform, sample rate, chunk_offsets_ms).
         """
         if not chunks:
-            return np.array([], dtype=np.float32), SAMPLE_RATE
+            return np.array([], dtype=np.float32), SAMPLE_RATE, []
 
         segments: list[np.ndarray] = []
         sample_rate = SAMPLE_RATE
@@ -205,7 +205,8 @@ class TTSEngine:
 
             segments.append(waveform)
 
-        return _concatenate_segments(segments, chunks, sample_rate), sample_rate
+        offsets = compute_chunk_offsets(segments, chunks, sample_rate)
+        return _concatenate_segments(segments, chunks, sample_rate), sample_rate, offsets
 
     def synthesize_chunks_streaming(
         self,
@@ -219,7 +220,8 @@ class TTSEngine:
         """Generate audio chunk by chunk, yielding cumulative waveform after each.
 
         Yields:
-            Tuple of (cumulative_waveform, sample_rate, chunk_index, total_chunks).
+            Tuple of (cumulative_waveform, sample_rate, chunk_index, total_chunks, chunk_offsets_ms).
+            chunk_offsets_ms is None for intermediate yields and a list[int] for the final yield.
         """
         if not chunks:
             return
@@ -269,7 +271,9 @@ class TTSEngine:
             segments.append(waveform)
 
             cumulative = _concatenate_segments(segments, chunks[:len(segments)], sample_rate)
-            yield cumulative, sample_rate, i + 1, len(chunks)
+            is_final = i + 1 == len(chunks)
+            offsets = compute_chunk_offsets(segments, chunks[:len(segments)], sample_rate) if is_final else None
+            yield cumulative, sample_rate, i + 1, len(chunks), offsets
 
 
 def _concatenate_segments(
@@ -293,3 +297,5 @@ def _concatenate_segments(
             parts.append(generate_silence(silence_ms, sample_rate))
 
     return np.concatenate(parts)
+
+

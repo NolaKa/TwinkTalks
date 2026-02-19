@@ -23,6 +23,41 @@ def _sanitize_filename(title: str) -> str:
     return s[:80] if s else "untitled"
 
 
+def _map_chunks_to_chapters(chunks, chunk_offsets_ms, toc_chapters, total_duration_ms):
+    """Map chapter boundaries to audio timestamps based on chunk source pages."""
+    from twinktalks.audio_utils import AudioChapter
+
+    if not toc_chapters or not chunk_offsets_ms:
+        return []
+
+    audio_chapters = []
+    for ch in toc_chapters:
+        # Find the first chunk whose source_page falls within this chapter's range
+        start_ms = None
+        for i, chunk in enumerate(chunks):
+            page = chunk.source_page or 1
+            if ch.start_page <= page <= ch.end_page:
+                if start_ms is None:
+                    start_ms = chunk_offsets_ms[i]
+
+        if start_ms is not None:
+            audio_chapters.append(AudioChapter(
+                title=ch.title,
+                start_ms=start_ms,
+                end_ms=total_duration_ms,
+            ))
+
+    # Fix end_ms: each chapter ends where the next begins
+    for i in range(len(audio_chapters) - 1):
+        audio_chapters[i] = AudioChapter(
+            title=audio_chapters[i].title,
+            start_ms=audio_chapters[i].start_ms,
+            end_ms=audio_chapters[i + 1].start_ms,
+        )
+
+    return audio_chapters
+
+
 def create_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="twinktalks",
@@ -113,6 +148,11 @@ def create_parser() -> argparse.ArgumentParser:
         help="List saved sessions and exit",
     )
     parser.add_argument(
+        "--chapter-markers",
+        action="store_true",
+        help="Embed chapter markers in MP3 output (requires TOC and .mp3 output)",
+    )
+    parser.add_argument(
         "--dry-run",
         action="store_true",
         help="Extract and preprocess text only, print to stdout (no TTS)",
@@ -135,29 +175,42 @@ def _process_single(
 ):
     """Run the full extract -> preprocess -> chunk -> synthesize -> save pipeline."""
     prefix = f"{label} " if label else ""
+    use_chapter_markers = getattr(args, "chapter_markers", False)
 
     # Step 1: Extract
     log.info("%sExtracting text from %s...", prefix, input_path.name)
-    from twinktalks.extractor import extract_text
-
-    text = extract_text(
-        str(input_path),
-        skip_references=not args.no_skip_references,
-        max_pages=args.max_pages,
-        page_range=page_range,
-        skip_tables=args.skip_tables,
-    )
-    log.info("%sExtracted %d characters.", prefix, len(text))
-
-    # Step 2: Preprocess
     from twinktalks.text_preprocessor import preprocess
 
-    text = preprocess(text)
+    if use_chapter_markers:
+        from twinktalks.extractor import extract_text_by_page
+        page_texts = extract_text_by_page(
+            str(input_path),
+            skip_references=not args.no_skip_references,
+            max_pages=args.max_pages,
+            page_range=page_range,
+            skip_tables=args.skip_tables,
+        )
+        page_texts = [(pg, preprocess(t)) for pg, t in page_texts]
+        text = "\n\n".join(t for _, t in page_texts)
+        log.info("%sExtracted %d characters from %d pages.", prefix, len(text), len(page_texts))
 
-    # Step 3: Chunk
-    from twinktalks.chunker import chunk_text
+        from twinktalks.chunker import chunk_paged_text
+        chunks = chunk_paged_text(page_texts)
+    else:
+        from twinktalks.extractor import extract_text
+        text = extract_text(
+            str(input_path),
+            skip_references=not args.no_skip_references,
+            max_pages=args.max_pages,
+            page_range=page_range,
+            skip_tables=args.skip_tables,
+        )
+        log.info("%sExtracted %d characters.", prefix, len(text))
+        text = preprocess(text)
 
-    chunks = chunk_text(text)
+        from twinktalks.chunker import chunk_text
+        chunks = chunk_text(text)
+
     word_count = len(text.split())
     log.info("%s%d chunks (%d words).", prefix, len(chunks), word_count)
 
@@ -213,7 +266,7 @@ def _process_single(
             mgr.update_progress(session, current)
 
         start_time = time.time()
-        waveform, sample_rate = engine.synthesize_chunks(
+        waveform, sample_rate, _offsets = engine.synthesize_chunks(
             chunks,
             language=args.language,
             speed=args.speed,
@@ -229,7 +282,7 @@ def _process_single(
             mgr.update_progress(session, current)
 
         start_time = time.time()
-        waveform, sample_rate = engine.synthesize_chunks(
+        waveform, sample_rate, _offsets = engine.synthesize_chunks(
             chunks,
             language=args.language,
             speed=args.speed,
@@ -247,6 +300,19 @@ def _process_single(
     output_path.parent.mkdir(parents=True, exist_ok=True)
     save_audio(waveform, str(output_path), sample_rate)
     duration = get_duration_seconds(waveform, sample_rate)
+
+    # Step 6: Embed chapter markers in MP3
+    if use_chapter_markers and output_path.suffix.lower() == ".mp3" and _offsets:
+        from twinktalks.extractor import extract_toc
+        from twinktalks.audio_utils import AudioChapter, add_chapter_markers
+
+        toc_chapters = extract_toc(str(input_path))
+        if toc_chapters:
+            total_ms = int(duration * 1000)
+            audio_chapters = _map_chunks_to_chapters(chunks, _offsets, toc_chapters, total_ms)
+            if audio_chapters:
+                add_chapter_markers(str(output_path), audio_chapters)
+                log.info("%sEmbedded %d chapter markers.", prefix, len(audio_chapters))
 
     log.info("%sSaved to: %s (%.1fs audio, %.1fs gen time)", prefix, output_path, duration, elapsed)
 

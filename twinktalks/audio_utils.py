@@ -1,11 +1,24 @@
 """Audio concatenation, silence generation, and export utilities."""
 
+import logging
+from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
 import soundfile as sf
 
 from twinktalks.config import SAMPLE_RATE
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass
+class AudioChapter:
+    """A chapter marker for embedding in MP3 files."""
+
+    title: str
+    start_ms: int
+    end_ms: int
 
 
 def generate_silence(duration_ms: int, sample_rate: int = SAMPLE_RATE) -> np.ndarray:
@@ -90,3 +103,83 @@ def save_audio(
 def get_duration_seconds(waveform: np.ndarray, sample_rate: int = SAMPLE_RATE) -> float:
     """Get the duration of a waveform in seconds."""
     return len(waveform) / sample_rate
+
+
+def compute_chunk_offsets(
+    segments: list[np.ndarray],
+    chunks: list,
+    sample_rate: int,
+) -> list[int]:
+    """Compute the start time offset (in ms) of each segment in the concatenated waveform.
+
+    Args:
+        segments: List of audio waveform arrays.
+        chunks: List of Chunk objects (needs is_paragraph_end attribute).
+        sample_rate: Audio sample rate.
+
+    Returns:
+        List of start offsets in milliseconds, one per segment.
+    """
+    from twinktalks.config import INTER_SENTENCE_SILENCE_MS, INTER_PARAGRAPH_SILENCE_MS
+
+    offsets = []
+    cumulative_samples = 0
+
+    for i, seg in enumerate(segments):
+        offset_ms = int(cumulative_samples * 1000 / sample_rate)
+        offsets.append(offset_ms)
+        cumulative_samples += len(seg)
+        if i < len(segments) - 1:
+            silence_ms = (
+                INTER_PARAGRAPH_SILENCE_MS
+                if chunks[i].is_paragraph_end
+                else INTER_SENTENCE_SILENCE_MS
+            )
+            silence_samples = int(sample_rate * silence_ms / 1000)
+            cumulative_samples += silence_samples
+
+    return offsets
+
+
+def add_chapter_markers(mp3_path: str, chapters: list[AudioChapter]) -> None:
+    """Embed ID3v2 chapter markers (CHAP + CTOC frames) into an MP3 file.
+
+    Requires mutagen. If mutagen is not installed, logs a warning and returns.
+    """
+    if not chapters:
+        return
+
+    try:
+        from mutagen.id3 import ID3, CHAP, CTOC, TIT2, CTOCFlags
+    except ImportError:
+        logger.warning(
+            "mutagen not installed — cannot embed chapter markers. "
+            "Install with: pip install mutagen"
+        )
+        return
+
+    path = Path(mp3_path)
+    if not path.exists() or path.suffix.lower() != ".mp3":
+        raise ValueError(f"Expected existing .mp3 file, got: {mp3_path}")
+
+    tags = ID3(str(path))
+
+    child_ids = []
+    for i, ch in enumerate(chapters):
+        chap_id = f"chap{i}"
+        child_ids.append(chap_id)
+        tags.add(CHAP(
+            element_id=chap_id,
+            start_time=ch.start_ms,
+            end_time=ch.end_ms,
+            sub_frames=[TIT2(encoding=3, text=[ch.title])],
+        ))
+
+    tags.add(CTOC(
+        element_id="toc",
+        flags=CTOCFlags.TOP_LEVEL | CTOCFlags.ORDERED,
+        child_element_ids=child_ids,
+        sub_frames=[TIT2(encoding=3, text=["Table of Contents"])],
+    ))
+
+    tags.save(str(path))

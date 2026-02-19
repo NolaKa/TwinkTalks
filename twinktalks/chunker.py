@@ -14,6 +14,7 @@ class Chunk:
     text: str
     index: int
     is_paragraph_end: bool
+    source_page: int | None = None
 
 
 def _ensure_nltk_data():
@@ -81,5 +82,34 @@ def chunk_text(text: str, max_chars: int = MAX_CHUNK_CHARS) -> list[Chunk]:
                 chunk_index += 1
                 current_chunk_sentences = []
                 current_length = 0
+
+    return chunks
+
+
+def chunk_paged_text(
+    page_texts: list[tuple[int, str]],
+    max_chars: int = MAX_CHUNK_CHARS,
+) -> list[Chunk]:
+    """Chunk text while preserving page origin.
+
+    Args:
+        page_texts: List of (page_number, text) tuples.
+
+    Returns:
+        Chunks with source_page set to the page they originated from.
+    """
+    chunks: list[Chunk] = []
+    chunk_index = 0
+
+    for page_num, page_text in page_texts:
+        page_chunks = chunk_text(page_text, max_chars)
+        for pc in page_chunks:
+            chunks.append(Chunk(
+                text=pc.text,
+                index=chunk_index,
+                is_paragraph_end=pc.is_paragraph_end,
+                source_page=page_num,
+            ))
+            chunk_index += 1
 
     return chunks

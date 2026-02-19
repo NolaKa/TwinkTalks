@@ -168,6 +168,54 @@ def _extract_with_pymupdf(path: Path, max_pages: int | None, page_range: tuple[i
     return "\n\n".join(pages_text)
 
 
+def extract_text_by_page(
+    pdf_path: str,
+    skip_references: bool = True,
+    max_pages: int | None = None,
+    page_range: tuple[int, int] | None = None,
+    skip_tables: bool = False,
+) -> list[tuple[int, str]]:
+    """Extract text from a PDF, returning per-page results.
+
+    Returns:
+        List of (page_number, text) tuples (1-indexed).
+    """
+    path = Path(pdf_path)
+    if not path.exists():
+        raise FileNotFoundError(f"PDF not found: {pdf_path}")
+
+    page_texts: list[tuple[int, str]] = []
+    try:
+        with pdfplumber.open(path) as pdf:
+            page_list = _select_pages(pdf.pages, max_pages, page_range)
+            for page in page_list:
+                page_num = page.page_number  # 1-indexed
+                crop_box = (
+                    0,
+                    min(PDF_CROP_MARGIN_TOP, page.height * 0.15),
+                    page.width,
+                    page.height - min(PDF_CROP_MARGIN_BOTTOM, page.height * 0.15),
+                )
+                cropped = page.crop(crop_box)
+                if skip_tables:
+                    cropped = _filter_out_table_chars(page, cropped)
+                text = cropped.extract_text(
+                    layout=True,
+                    x_tolerance=LAYOUT_X_TOLERANCE,
+                    y_tolerance=LAYOUT_Y_TOLERANCE,
+                )
+                if text and text.strip():
+                    if skip_references:
+                        from twinktalks.text_preprocessor import truncate_at_references
+                        text = truncate_at_references(text)
+                    if text.strip():
+                        page_texts.append((page_num, text))
+    except Exception:
+        pass
+
+    return page_texts
+
+
 def _truncate_at_references(text: str) -> str:
     """Truncate text at the References/Bibliography section."""
     from twinktalks.text_preprocessor import truncate_at_references

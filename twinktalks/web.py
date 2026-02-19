@@ -260,15 +260,29 @@ def _get_page_range(start, end, total) -> tuple[int, int] | None:
     return (max(1, s), min(total, e))
 
 
-def on_pdf_upload(pdf_file):
-    """Called when a PDF is uploaded. Returns page count, shows page selectors and TOC."""
-    if pdf_file is None:
+def on_files_upload(files):
+    """Called when file(s) are uploaded. Handles single and multi-file modes."""
+    if files is None or len(files) == 0:
         return (
             gr.update(visible=False), gr.update(visible=False), gr.update(visible=False),
             gr.update(visible=False, choices=[], value=None),
             "// READY",
         )
 
+    if len(files) > 1:
+        # Queue mode: hide page range & chapter, show queue summary
+        from pathlib import Path
+        names = [Path(f.name).name for f in files]
+        return (
+            gr.update(visible=False),
+            gr.update(visible=False),
+            gr.update(visible=False),
+            gr.update(visible=False, choices=[], value=None),
+            f"// QUEUE — {len(files)} files: {', '.join(names)}",
+        )
+
+    # Single file: show page range & TOC as before
+    pdf_file = files[0]
     from twinktalks.extractor import get_item_count, extract_toc as get_toc
     try:
         total = get_item_count(pdf_file.name)
@@ -302,9 +316,13 @@ def on_pdf_upload(pdf_file):
         )
 
 
-def on_chapter_select(chapter_choice, pdf_file):
+def on_chapter_select(chapter_choice, files):
     """When a chapter is selected from the dropdown, update FROM/TO page inputs."""
-    if not chapter_choice or chapter_choice in ("All pages", "All chapters") or pdf_file is None:
+    if not files or len(files) != 1:
+        return gr.update(), gr.update()
+
+    pdf_file = files[0]
+    if not chapter_choice or chapter_choice in ("All pages", "All chapters"):
         from twinktalks.extractor import get_item_count
         try:
             total = get_item_count(pdf_file.name)
@@ -320,8 +338,106 @@ def on_chapter_select(chapter_choice, pdf_file):
     return gr.update(), gr.update()
 
 
-def process_pdf(
-    pdf_file,
+def _extract_and_preprocess(file_path: str, skip_references: bool, skip_tables: bool, page_range=None) -> str:
+    """Shared extract + preprocess pipeline."""
+    from twinktalks.extractor import extract_text
+    from twinktalks.text_preprocessor import preprocess
+    text = extract_text(
+        file_path,
+        skip_references=skip_references,
+        page_range=page_range,
+        skip_tables=skip_tables,
+    )
+    return preprocess(text)
+
+
+def _synthesize_single_file(
+    file_path: str, stem: str, tmp_dir: str,
+    page_range, speaker, language, speed, skip_references, skip_tables, instruct,
+    output_format: str = "wav",
+    status_prefix: str = "",
+):
+    """Generator: synthesize one file, yielding (status, audio_path, text) per chunk."""
+    from twinktalks.chunker import chunk_text
+    from twinktalks.audio_utils import save_audio, get_duration_seconds
+    import os
+
+    text = _extract_and_preprocess(file_path, skip_references, skip_tables, page_range)
+    chunks = chunk_text(text)
+    word_count = len(text.split())
+
+    if not chunks:
+        yield f"{status_prefix}// NO TEXT", None, text
+        return
+
+    pages_info = f"p.{page_range[0]}-{page_range[1]}" if page_range else "all"
+    speed_info = f" @{speed}x" if speed != 1.0 else ""
+    yield f"{status_prefix}// PROCESSING — {word_count} words, {len(chunks)} chunks ({pages_info}){speed_info}", None, text
+
+    engine = _get_engine(speaker)
+
+    prev_tmp = None
+    final_offsets = None
+    for cumulative, sample_rate, current, total_chunks, offsets in engine.synthesize_chunks_streaming(
+        chunks, language=language, speed=speed, instruct=instruct or "",
+    ):
+        tmp_path = os.path.join(tmp_dir, f"{stem}_{current}of{total_chunks}.wav")
+        save_audio(cumulative, tmp_path, sample_rate)
+        duration = get_duration_seconds(cumulative, sample_rate)
+
+        if offsets is not None:
+            final_offsets = offsets
+
+        if prev_tmp and os.path.exists(prev_tmp):
+            os.unlink(prev_tmp)
+        prev_tmp = tmp_path
+
+        if current < total_chunks:
+            yield f"{status_prefix}// GENERATING — chunk {current}/{total_chunks} — {duration:.1f}s", tmp_path, text
+        else:
+            ext = output_format if output_format in ("wav", "mp3") else "wav"
+            final_path = os.path.join(tmp_dir, f"{stem}.{ext}")
+
+            if ext == "mp3":
+                save_audio(cumulative, final_path, sample_rate)
+                os.unlink(tmp_path)
+            else:
+                os.rename(tmp_path, final_path)
+            prev_tmp = None
+
+            # Embed chapter markers in MP3 if TOC is available
+            if ext == "mp3" and final_offsets:
+                try:
+                    from twinktalks.extractor import extract_toc
+                    from twinktalks.audio_utils import add_chapter_markers
+                    toc_chapters = extract_toc(file_path)
+                    if toc_chapters:
+                        total_ms = int(duration * 1000)
+                        # Use paged extraction for chapter mapping
+                        from twinktalks.extractor import extract_text_by_page
+                        from twinktalks.text_preprocessor import preprocess as pp
+                        from twinktalks.chunker import chunk_paged_text
+                        page_texts = extract_text_by_page(
+                            file_path, skip_references=skip_references,
+                            page_range=page_range, skip_tables=skip_tables,
+                        )
+                        page_texts = [(pg, pp(t)) for pg, t in page_texts]
+                        paged_chunks = chunk_paged_text(page_texts)
+
+                        from twinktalks.cli import _map_chunks_to_chapters
+                        audio_chapters = _map_chunks_to_chapters(
+                            paged_chunks, final_offsets, toc_chapters, total_ms,
+                        )
+                        if audio_chapters:
+                            add_chapter_markers(final_path, audio_chapters)
+                except Exception:
+                    pass  # Chapter markers are best-effort
+
+            yield f"{status_prefix}// DONE — {duration:.1f}s audio / {word_count} words / {total_chunks} chunks", final_path, text
+
+
+def process_queue(
+    files,
     page_start,
     page_end,
     page_info,
@@ -330,91 +446,80 @@ def process_pdf(
     speed: float,
     skip_references: bool,
     skip_tables: bool,
+    output_format: str,
     instruct: str = "",
-) -> tuple[str, str | None, str]:
-    """Full pipeline: PDF -> text -> audio."""
-    if pdf_file is None:
-        return "// NO FILE", None, ""
+):
+    """Process one or multiple files. Generator yielding (status, audio, text, completed_files)."""
+    if files is None or len(files) == 0:
+        yield "// NO FILE", None, "", None
+        return
+
+    from pathlib import Path
+    fmt = output_format if output_format in ("wav", "mp3") else "wav"
 
     try:
-        total = int(page_info) if page_info else 9999
-        page_range = _get_page_range(page_start, page_end, total)
+        if len(files) == 1:
+            # Single file mode: use page range as before
+            pdf_file = files[0]
+            total = int(page_info) if page_info else 9999
+            page_range = _get_page_range(page_start, page_end, total)
+            stem = Path(pdf_file.name).stem
+            tmp_dir = tempfile.mkdtemp()
 
-        from twinktalks.extractor import extract_text
-        text = extract_text(
-            pdf_file.name,
-            skip_references=skip_references,
-            page_range=page_range,
-            skip_tables=skip_tables,
-        )
+            for status, audio, text in _synthesize_single_file(
+                pdf_file.name, stem, tmp_dir,
+                page_range, speaker, language, speed, skip_references, skip_tables, instruct,
+                output_format=fmt,
+            ):
+                yield status, audio, text, None
+            return
 
-        from twinktalks.text_preprocessor import preprocess
-        text = preprocess(text)
-
-        from twinktalks.chunker import chunk_text
-        chunks = chunk_text(text)
-        word_count = len(text.split())
-
-        pages_info = f"p.{page_range[0]}-{page_range[1]}" if page_range else "all"
-        speed_info = f" @{speed}x" if speed != 1.0 else ""
-        status = f"// PROCESSING — {word_count} words, {len(chunks)} chunks ({pages_info}){speed_info}"
-        yield status, None, text
-
-        engine = _get_engine(speaker)
-        from twinktalks.audio_utils import save_audio, get_duration_seconds
-        import os
-        from pathlib import Path
-
-        # Build a readable filename from the source file
-        stem = Path(pdf_file.name).stem
+        # Queue mode: process each file sequentially
+        completed_paths = []
         tmp_dir = tempfile.mkdtemp()
 
-        prev_tmp = None
-        for cumulative, sample_rate, current, total_chunks in engine.synthesize_chunks_streaming(
-            chunks, language=language, speed=speed, instruct=instruct or "",
-        ):
-            # Use readable name; append chunk count to force Gradio cache refresh
-            tmp_path = os.path.join(tmp_dir, f"{stem}_{current}of{total_chunks}.wav")
-            save_audio(cumulative, tmp_path, sample_rate)
-            duration = get_duration_seconds(cumulative, sample_rate)
+        for file_idx, file_obj in enumerate(files, 1):
+            stem = Path(file_obj.name).stem
+            file_name = Path(file_obj.name).name
+            file_tmp_dir = f"{tmp_dir}/{stem}_{file_idx}"
+            import os
+            os.makedirs(file_tmp_dir, exist_ok=True)
 
-            if prev_tmp and os.path.exists(prev_tmp):
-                os.unlink(prev_tmp)
-            prev_tmp = tmp_path
+            final_audio = None
 
-            if current < total_chunks:
-                status = f"// GENERATING — chunk {current}/{total_chunks} — {duration:.1f}s"
-                yield status, tmp_path, text
-            else:
-                # Final file gets a clean name without chunk suffix
-                final_path = os.path.join(tmp_dir, f"{stem}.wav")
-                os.rename(tmp_path, final_path)
-                prev_tmp = None
-                status = f"// DONE — {duration:.1f}s audio / {word_count} words / {total_chunks} chunks"
-                yield status, final_path, text
+            for status, audio, text in _synthesize_single_file(
+                file_obj.name, stem, file_tmp_dir,
+                None, speaker, language, speed, skip_references, skip_tables, instruct,
+                output_format=fmt,
+                status_prefix=f"// QUEUE {file_idx}/{len(files)} — \"{file_name}\" — ",
+            ):
+                final_audio = audio
+                yield status, audio, text, completed_paths if completed_paths else None
+
+            if final_audio:
+                completed_paths.append(final_audio)
+
+        yield (
+            f"// QUEUE COMPLETE — {len(files)} files processed",
+            completed_paths[-1] if completed_paths else None,
+            "",
+            completed_paths,
+        )
 
     except Exception as e:
-        yield f"// ERROR — {e}", None, ""
+        yield f"// ERROR — {e}", None, "", None
 
 
-def extract_only(pdf_file, page_start, page_end, page_info, skip_references: bool, skip_tables: bool) -> str:
+def extract_only(files, page_start, page_end, page_info, skip_references: bool, skip_tables: bool) -> str:
     """Extract and preprocess text without TTS."""
-    if pdf_file is None:
+    if not files or len(files) == 0:
         return "// NO FILE"
 
+    pdf_file = files[0]  # Preview works for first/single file
     total = int(page_info) if page_info else 9999
     page_range = _get_page_range(page_start, page_end, total)
 
-    from twinktalks.extractor import extract_text
-    from twinktalks.text_preprocessor import preprocess
-
-    text = extract_text(
-        pdf_file.name,
-        skip_references=skip_references,
-        page_range=page_range,
-        skip_tables=skip_tables,
-    )
-    return preprocess(text)
+    return _extract_and_preprocess(pdf_file.name, skip_references, skip_tables, page_range)
 
 
 def create_app() -> gr.Blocks:
@@ -426,10 +531,11 @@ def create_app() -> gr.Blocks:
             elem_classes=["header-block"],
         )
 
-        # Upload
+        # Upload (multiple files supported for queue mode)
         pdf_input = gr.File(
             label="INPUT",
             file_types=[".pdf", ".epub"],
+            file_count="multiple",
             elem_classes=["upload-zone"],
         )
 
@@ -493,6 +599,11 @@ def create_app() -> gr.Blocks:
                 value=False,
                 label="SKIP TABLES",
             )
+            output_format = gr.Radio(
+                choices=["wav", "mp3"],
+                value="wav",
+                label="FORMAT",
+            )
 
         # Voice style
         with gr.Accordion("VOICE STYLE", open=False):
@@ -551,6 +662,12 @@ def create_app() -> gr.Blocks:
             elem_classes=["audio-output"],
         )
 
+        # Completed files (queue mode — shows all finished files for download)
+        completed_files = gr.Files(
+            label="COMPLETED FILES",
+            visible=False,
+        )
+
         # Text preview
         with gr.Accordion("EXTRACTED TEXT", open=False):
             text_preview = gr.Textbox(
@@ -562,7 +679,7 @@ def create_app() -> gr.Blocks:
 
         # Events: on upload -> detect pages, show page selectors and TOC
         pdf_input.change(
-            fn=on_pdf_upload,
+            fn=on_files_upload,
             inputs=[pdf_input],
             outputs=[page_start, page_end, page_info, chapter_dropdown, status],
         )
@@ -580,9 +697,9 @@ def create_app() -> gr.Blocks:
             outputs=[text_preview],
         )
         generate_btn.click(
-            fn=process_pdf,
-            inputs=[pdf_input, page_start, page_end, page_info, speaker, language, speed_slider, skip_refs, skip_tables, instruct_box],
-            outputs=[status, audio_output, text_preview],
+            fn=process_queue,
+            inputs=[pdf_input, page_start, page_end, page_info, speaker, language, speed_slider, skip_refs, skip_tables, output_format, instruct_box],
+            outputs=[status, audio_output, text_preview, completed_files],
         )
 
         # Preset selection -> apply settings

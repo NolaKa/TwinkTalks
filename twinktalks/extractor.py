@@ -34,6 +34,22 @@ def extract_text(file_path: str, **kwargs) -> str:
         return epub_extract(file_path, **kwargs)
 
 
+def extract_text_by_page(file_path: str, **kwargs) -> list[tuple[int, str]]:
+    """Extract text as page-annotated list: [(page_num, text), ...]."""
+    ext = detect_file_type(file_path)
+    if ext == ".pdf":
+        from twinktalks.pdf_extractor import extract_text_by_page as pdf_by_page
+        return pdf_by_page(file_path, **kwargs)
+    elif ext == ".epub":
+        from twinktalks.epub_extractor import extract_text_by_item as epub_by_item
+        if "page_range" in kwargs:
+            kwargs["chapter_range"] = kwargs.pop("page_range")
+        kwargs.pop("max_pages", None)
+        kwargs.pop("skip_tables", None)
+        return epub_by_item(file_path, **kwargs)
+    return []
+
+
 def get_item_count(file_path: str) -> int:
     """Return page count (PDF) or chapter count (EPUB)."""
     ext = detect_file_type(file_path)
