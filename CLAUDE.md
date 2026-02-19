@@ -18,6 +18,7 @@ twinktalks/
 ├── audio_utils.py        # Concatenate waveforms, silence gaps, WAV/MP3 export
 ├── toc.py                # TOC extraction (PyMuPDF get_toc()), Chapter dataclass
 ├── session.py            # SessionManager — per-chunk WAV saving, resume support
+├── presets.py            # Built-in voice presets + user favorites (~/.twinktalks/presets.json)
 ├── cli.py                # CLI with batch chapter processing (_process_single pipeline)
 └── web.py                # Gradio web UI with streaming playback
 ```
@@ -30,6 +31,8 @@ twinktalks/
 - **EPUB extraction**: ebooklib parses EPUB container, BeautifulSoup extracts text from HTML spine items. Chapters map to spine indices (reuses `Chapter` dataclass from `toc.py`).
 - **Extractor router** (`extractor.py`): Dispatches `extract_text()`, `get_item_count()`, `extract_toc()` by file extension. Maps PDF-specific kwargs (`page_range`, `skip_tables`) and strips them for EPUB.
 - **Chunking**: Sentences grouped into ~500 char chunks. `max_new_tokens=1024`. Never breaks mid-sentence.
+- **Voice modulation**: `instruct` parameter passed to `generate_custom_voice()`. Accepts natural language (e.g. "Speak calmly"). Empty string = default voice behavior.
+- **Presets** (`presets.py`): 8 built-in presets (Calm Narrator, Audiobook, Whisper, etc.) + user favorites saved to `~/.twinktalks/presets.json`. `resolve_preset()` returns `{speaker, speed, instruct}`. User presets prefixed with `* ` in dropdown.
 - **Speed**: Native Qwen3-TTS `speed` parameter (0.5-2.0). No post-processing needed.
 - **Streaming**: `synthesize_chunks_streaming()` is a generator that yields cumulative waveform after each chunk. Web UI writes a new temp WAV per yield (avoids Gradio file cache issues).
 - **Batch**: `--chapters all` loops over `extract_toc()`, calls `_process_single()` per chapter. Each chapter gets its own session.
@@ -44,6 +47,11 @@ python -m twinktalks paper.pdf -o output.wav
 python -m twinktalks book.epub -o output.wav
 python -m twinktalks paper.pdf --dry-run        # text only, no TTS
 
+# Voice presets and instruct
+python -m twinktalks paper.pdf --preset "Audiobook" -o output.wav
+python -m twinktalks paper.pdf --instruct "Speak calmly" -o output.wav
+python -m twinktalks --list-presets
+
 # Batch — one audio file per chapter
 python -m twinktalks textbook.pdf --chapters all
 
@@ -57,7 +65,7 @@ python -m twinktalks.web                         # http://localhost:7860
 python -m pytest tests/ -v
 ```
 
-92 unit tests covering preprocessor, chunker, pdf_extractor, epub_extractor, extractor router, toc, session, cli batch helpers. TTS engine tests require the model (manual).
+106 unit tests covering preprocessor, chunker, pdf_extractor, epub_extractor, extractor router, toc, session, presets, cli batch helpers. TTS engine tests require the model (manual).
 
 ## Dependencies
 

@@ -9,11 +9,14 @@ PDF & EPUB to Speech converter powered by [Qwen3-TTS](https://huggingface.co/Qwe
 - **Batch processing** — `--chapters all` generates a separate audio file per chapter
 - **Table of contents & chapters** — auto-detects TOC from PDF or EPUB, select specific chapters by name or index
 - **Skip tables** — excludes diagnostic tables, DSM criteria, etc. from speech output
+- **Voice modulation** — natural language `instruct` parameter controls emotion, tone, and style (e.g. "Speak calmly like an audiobook narrator")
+- **8 built-in voice presets** — Default, Calm Narrator, Energetic, Warm & Gentle, Lecture, Audiobook, Fast Summary, Whisper
+- **Custom favorites** — save your own speaker + speed + instruct combos as reusable presets
 - **Speed control** — adjustable speaking rate (0.5x-2.0x) via native Qwen3-TTS parameter
 - **Session resume** — saves progress per chunk, resume interrupted generation from where it stopped
 - **Academic text cleanup** — removes citations, figure captions, URLs, expands abbreviations for natural TTS output
 - **Sentence-aware chunking** — splits long documents into optimal chunks for stable generation
-- **9 preset voices** — Aiden, Ryan, Aria, Claire, Emma, Leo, Mia, Noah, Sophia
+- **9 speaker voices** — Aiden, Ryan, Aria, Claire, Emma, Leo, Mia, Noah, Sophia
 - **10+ languages** — English, Chinese, Japanese, Korean, German, French, Russian, Portuguese, Spanish, Italian
 - **CLI + Web UI** — terminal interface with progress bar or Gradio browser app
 - **WAV & MP3 export**
@@ -74,6 +77,16 @@ python -m twinktalks paper.pdf --chapter 3 -o output.wav
 python -m twinktalks textbook.pdf --chapters all
 python -m twinktalks textbook.epub --chapters all -o output_dir/
 
+# Voice style instruction
+python -m twinktalks paper.pdf --instruct "Speak calmly like a narrator" -o output.wav
+
+# Use a built-in voice preset
+python -m twinktalks paper.pdf --preset "Audiobook" -o output.wav
+python -m twinktalks paper.pdf --preset "Whisper" -o output.wav
+
+# List all available presets
+python -m twinktalks --list-presets
+
 # Resume interrupted session
 python -m twinktalks paper.pdf --list-sessions
 python -m twinktalks paper.pdf --resume <session-id> -o output.wav
@@ -86,7 +99,7 @@ python -m twinktalks.web
 # Open http://localhost:7860
 ```
 
-Upload a PDF or EPUB, pick a voice, hit Generate. Audio streams progressively as chunks are generated. Features: chapter selector (auto-detected TOC), speed slider, skip tables/references checkboxes, page range selection.
+Upload a PDF or EPUB, pick a voice, hit Generate. Audio streams progressively as chunks are generated. Features: voice presets with custom instruct, chapter selector (auto-detected TOC), speed slider, skip tables/references checkboxes, page range selection. Save your favorite voice settings as reusable presets.
 
 ## Project Structure
 
@@ -102,6 +115,7 @@ twinktalks/
 ├── audio_utils.py        # Audio concatenation & export
 ├── toc.py                # Table of contents extraction (PyMuPDF)
 ├── session.py            # Resumable session management
+├── presets.py            # Built-in & user voice presets
 ├── cli.py                # CLI with batch chapter processing
 └── web.py                # Gradio web UI with streaming playback
 ```
@@ -111,7 +125,7 @@ twinktalks/
 1. **Extract** — pdfplumber reads PDF with `layout=True` for multi-column support (or ebooklib for EPUB), crops headers/footers, truncates at References
 2. **Preprocess** — removes `[1,2]` citations, `(Author et al., 2024)`, figure/table captions, URLs, DOIs, section numbers; expands abbreviations (`e.g.` → `for example`)
 3. **Chunk** — splits into ~500 character chunks at sentence boundaries, preserving paragraph structure
-4. **Synthesize** — Qwen3-TTS generates audio chunk by chunk with retry logic
+4. **Synthesize** — Qwen3-TTS generates audio chunk by chunk with retry logic, applying voice style via `instruct` parameter
 5. **Export** — concatenates with natural pauses between sentences/paragraphs, saves as WAV or MP3
 
 ## Model
