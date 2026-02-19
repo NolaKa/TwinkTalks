@@ -17,12 +17,19 @@ class Chunk:
     source_page: int | None = None
 
 
+_nltk_ready = False
+
+
 def _ensure_nltk_data():
-    """Download punkt tokenizer if not available."""
+    """Download punkt tokenizer if not available (cached after first check)."""
+    global _nltk_ready
+    if _nltk_ready:
+        return
     try:
         nltk.data.find("tokenizers/punkt_tab")
     except LookupError:
         nltk.download("punkt_tab", quiet=True)
+    _nltk_ready = True
 
 
 def chunk_text(text: str, max_chars: int = MAX_CHUNK_CHARS) -> list[Chunk]:

@@ -81,7 +81,7 @@ def save_audio(
             from pydub import AudioSegment
 
             # Convert numpy array to pydub AudioSegment
-            audio_int16 = (waveform * 32767).astype(np.int16)
+            audio_int16 = (np.clip(waveform, -1.0, 1.0) * 32767).astype(np.int16)
             audio_segment = AudioSegment(
                 data=audio_int16.tobytes(),
                 sample_width=2,

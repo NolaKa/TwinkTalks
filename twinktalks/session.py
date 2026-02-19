@@ -64,8 +64,11 @@ class SessionManager:
         meta_path = self.base_dir / session_id / "session.json"
         if not meta_path.exists():
             return None
-        data = json.loads(meta_path.read_text())
-        return Session(**data)
+        try:
+            data = json.loads(meta_path.read_text())
+            return Session(**data)
+        except (json.JSONDecodeError, TypeError):
+            return None
 
     def get_session_dir(self, session_id: str) -> Path:
         """Return the directory for a session's chunk files."""

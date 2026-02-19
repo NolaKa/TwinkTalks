@@ -17,6 +17,22 @@ from twinktalks.config import (
 logger = logging.getLogger(__name__)
 
 _engine = None
+_temp_dirs: list[str] = []  # track temp dirs for cleanup
+
+
+def _make_temp_dir() -> str:
+    """Create a temp dir and track it for cleanup."""
+    import shutil
+    # Clean up previous temp dirs (files already served by Gradio)
+    for old_dir in _temp_dirs:
+        try:
+            shutil.rmtree(old_dir, ignore_errors=True)
+        except Exception:
+            pass
+    _temp_dirs.clear()
+    d = tempfile.mkdtemp(prefix="twinktalks_")
+    _temp_dirs.append(d)
+    return d
 
 CUSTOM_CSS = """
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
@@ -581,7 +597,7 @@ def process_queue(
             total = int(page_info) if page_info else 9999
             page_range = _get_page_range(page_start, page_end, total)
             stem = Path(pdf_file.name).stem
-            tmp_dir = tempfile.mkdtemp()
+            tmp_dir = _make_temp_dir()
 
             for status, audio, text in _synthesize_single_file(
                 pdf_file.name, stem, tmp_dir,

@@ -219,6 +219,9 @@ class TTSEngine:
     ):
         """Generate audio chunk by chunk, yielding cumulative waveform after each.
 
+        Uses incremental concatenation (O(n) total) instead of rebuilding
+        from scratch each iteration.
+
         Yields:
             Tuple of (cumulative_waveform, sample_rate, chunk_index, total_chunks, chunk_offsets_ms).
             chunk_offsets_ms is None for intermediate yields and a list[int] for the final yield.
@@ -229,6 +232,7 @@ class TTSEngine:
         segments: list[np.ndarray] = []
         sample_rate = SAMPLE_RATE
         max_retries = 3
+        cumulative: np.ndarray | None = None
 
         # Load previously saved chunks if resuming
         if session_dir and start_from > 0:
@@ -239,6 +243,8 @@ class TTSEngine:
                     data, sr = sf.read(str(chunk_path))
                     segments.append(data.astype(np.float32))
                     sample_rate = sr
+            if segments:
+                cumulative = _concatenate_segments(segments, chunks[:len(segments)], sample_rate)
 
         for i in range(start_from, len(chunks)):
             chunk = chunks[i]
@@ -270,7 +276,19 @@ class TTSEngine:
 
             segments.append(waveform)
 
-            cumulative = _concatenate_segments(segments, chunks[:len(segments)], sample_rate)
+            # Incremental concatenation: append silence + new segment to cumulative
+            if cumulative is None:
+                cumulative = waveform
+            else:
+                prev_chunk = chunks[len(segments) - 2]
+                silence_ms = (
+                    INTER_PARAGRAPH_SILENCE_MS
+                    if prev_chunk.is_paragraph_end
+                    else INTER_SENTENCE_SILENCE_MS
+                )
+                silence = generate_silence(silence_ms, sample_rate)
+                cumulative = np.concatenate([cumulative, silence, waveform])
+
             is_final = i + 1 == len(chunks)
             offsets = compute_chunk_offsets(segments, chunks[:len(segments)], sample_rate) if is_final else None
             yield cumulative, sample_rate, i + 1, len(chunks), offsets
