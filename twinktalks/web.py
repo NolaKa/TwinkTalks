@@ -1,4 +1,4 @@
-"""Gradio web UI for TwinkTalks — cyber brutalist aesthetic."""
+"""Gradio web UI for TwinkTalks."""
 
 import logging
 import tempfile
@@ -19,106 +19,117 @@ logger = logging.getLogger(__name__)
 _engine = None
 
 CUSTOM_CSS = """
-@import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Inter:wght@300;400;700;900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
 
 :root {
-    --bg: #0a0a0a;
-    --surface: #111111;
-    --border: #2a2a2a;
+    --bg: #0c0c10;
+    --surface: #16161d;
+    --surface-hover: #1c1c26;
+    --border: #26263a;
+    --border-hover: #36365a;
     --accent: #c8ff00;
-    --accent-dim: #4a5f00;
-    --text: #e0e0e0;
-    --text-dim: #666666;
-    --danger: #ff3333;
-    --mono: 'Space Mono', 'SF Mono', monospace;
-    --sans: 'Inter', system-ui, sans-serif;
+    --accent-hover: #dfff33;
+    --accent-subtle: rgba(200,255,0,0.06);
+    --accent-glow: rgba(200,255,0,0.15);
+    --text: #e4e4ed;
+    --text-secondary: #9191a8;
+    --text-dim: #5c5c72;
+    --success: #34d399;
+    --mono: 'JetBrains Mono', 'SF Mono', monospace;
+    --sans: 'Inter', -apple-system, system-ui, sans-serif;
+    --radius: 12px;
+    --radius-sm: 8px;
+    --shadow-sm: 0 2px 8px rgba(0,0,0,0.2);
+    --shadow-md: 0 4px 16px rgba(0,0,0,0.3);
+    --transition: 0.2s cubic-bezier(0.4,0,0.2,1);
 }
 
 body, .gradio-container {
     background: var(--bg) !important;
     font-family: var(--sans) !important;
-    max-width: 900px !important;
+    max-width: 960px !important;
     margin: 0 auto !important;
+    color: var(--text) !important;
 }
 
 /* Header */
 .header-block {
-    border-bottom: 3px solid var(--accent) !important;
-    padding: 2rem 0 1.5rem !important;
-    margin-bottom: 2rem !important;
+    padding: 2.5rem 0 1.5rem !important;
+    margin-bottom: 1.5rem !important;
     background: none !important;
+    border: none !important;
 }
 .header-block h1 {
-    font-family: var(--mono) !important;
-    font-size: 2.4rem !important;
+    font-family: var(--sans) !important;
+    font-size: 1.8rem !important;
     font-weight: 700 !important;
-    color: var(--accent) !important;
-    letter-spacing: -0.02em !important;
+    color: var(--text) !important;
+    letter-spacing: -0.03em !important;
     margin: 0 !important;
-    line-height: 1 !important;
+    line-height: 1.2 !important;
+}
+.header-block h1 span.accent {
+    color: var(--accent) !important;
 }
 .header-block p {
-    font-family: var(--mono) !important;
-    font-size: 0.8rem !important;
+    font-family: var(--sans) !important;
+    font-size: 0.85rem !important;
     color: var(--text-dim) !important;
-    margin: 0.5rem 0 0 !important;
-    text-transform: uppercase !important;
-    letter-spacing: 0.15em !important;
+    margin: 0.4rem 0 0 !important;
+    font-weight: 400 !important;
+    letter-spacing: 0 !important;
+    text-transform: none !important;
 }
 
-/* All panels / containers */
-.gr-panel, .gr-box, .gr-form, .gr-input-label,
-div[class*="block"], div[class*="wrap"] {
-    border-radius: 0 !important;
+/* Row containers — clip children to rounded corners */
+.gr-group, .gr-row,
+div[class*="row"], div[class*="group"] {
+    overflow: hidden !important;
 }
-
-/* Input containers */
-.input-section {
-    border: 2px solid var(--border) !important;
-    background: var(--surface) !important;
-    padding: 1.5rem !important;
+/* Blocks inside rows — no extra radius (parent clips) */
+.gr-group > div, .gr-row > div {
     border-radius: 0 !important;
-}
-.input-section:hover {
-    border-color: var(--accent-dim) !important;
 }
 
 /* Labels */
 label, .gr-input-label, span[data-testid="block-label"] {
-    font-family: var(--mono) !important;
-    font-size: 0.7rem !important;
+    font-family: var(--sans) !important;
+    font-size: 0.75rem !important;
+    font-weight: 500 !important;
     text-transform: uppercase !important;
-    letter-spacing: 0.12em !important;
-    color: var(--text-dim) !important;
+    letter-spacing: 0.06em !important;
+    color: var(--text-secondary) !important;
 }
 
 /* File upload */
 .upload-zone {
     border: 2px dashed var(--border) !important;
-    background: var(--bg) !important;
-    border-radius: 0 !important;
-    padding: 3rem 2rem !important;
-    transition: border-color 0.2s !important;
+    background: var(--surface) !important;
+    border-radius: var(--radius) !important;
+    padding: 2.5rem 2rem !important;
+    transition: all var(--transition) !important;
 }
 .upload-zone:hover {
     border-color: var(--accent) !important;
+    background: var(--accent-subtle) !important;
 }
 
 /* Dropdowns & inputs */
 select, input[type="text"], textarea,
 .gr-input, .gr-text-input, .gr-dropdown {
-    background: var(--bg) !important;
-    border: 2px solid var(--border) !important;
-    border-radius: 0 !important;
+    background: var(--surface) !important;
+    border: 1px solid var(--border) !important;
+    border-radius: var(--radius-sm) !important;
     color: var(--text) !important;
-    font-family: var(--mono) !important;
-    font-size: 0.85rem !important;
+    font-family: var(--sans) !important;
+    font-size: 0.875rem !important;
     padding: 0.6rem 0.8rem !important;
+    transition: all var(--transition) !important;
 }
 select:focus, input:focus, textarea:focus {
     border-color: var(--accent) !important;
     outline: none !important;
-    box-shadow: none !important;
+    box-shadow: 0 0 0 3px var(--accent-glow) !important;
 }
 
 /* Checkbox */
@@ -129,38 +140,39 @@ input[type="checkbox"] {
 /* Buttons */
 .generate-btn {
     background: var(--accent) !important;
-    color: var(--bg) !important;
+    color: #0c0c10 !important;
     border: none !important;
-    border-radius: 0 !important;
-    font-family: var(--mono) !important;
-    font-weight: 700 !important;
-    font-size: 0.85rem !important;
-    text-transform: uppercase !important;
-    letter-spacing: 0.1em !important;
-    padding: 0.9rem 2rem !important;
+    border-radius: var(--radius-sm) !important;
+    font-family: var(--sans) !important;
+    font-weight: 600 !important;
+    font-size: 0.875rem !important;
+    letter-spacing: 0.02em !important;
+    padding: 0.75rem 2rem !important;
     cursor: pointer !important;
-    transition: all 0.15s !important;
+    transition: all var(--transition) !important;
+    box-shadow: 0 2px 12px rgba(200,255,0,0.2) !important;
 }
 .generate-btn:hover {
-    background: #dfff33 !important;
+    background: var(--accent-hover) !important;
+    box-shadow: 0 4px 20px rgba(200,255,0,0.3) !important;
     transform: translateY(-1px) !important;
 }
 .preview-btn {
-    background: transparent !important;
-    color: var(--text-dim) !important;
-    border: 2px solid var(--border) !important;
-    border-radius: 0 !important;
-    font-family: var(--mono) !important;
-    font-weight: 400 !important;
-    font-size: 0.8rem !important;
-    text-transform: uppercase !important;
-    letter-spacing: 0.1em !important;
-    padding: 0.9rem 1.5rem !important;
+    background: var(--surface) !important;
+    color: var(--text-secondary) !important;
+    border: 1px solid var(--border) !important;
+    border-radius: var(--radius-sm) !important;
+    font-family: var(--sans) !important;
+    font-weight: 500 !important;
+    font-size: 0.825rem !important;
+    letter-spacing: 0.02em !important;
+    padding: 0.75rem 1.5rem !important;
     cursor: pointer !important;
-    transition: all 0.15s !important;
+    transition: all var(--transition) !important;
 }
 .preview-btn:hover {
-    border-color: var(--text-dim) !important;
+    border-color: var(--border-hover) !important;
+    background: var(--surface-hover) !important;
     color: var(--text) !important;
 }
 
@@ -168,44 +180,48 @@ input[type="checkbox"] {
 .status-bar textarea {
     font-family: var(--mono) !important;
     font-size: 0.8rem !important;
-    background: var(--bg) !important;
-    border: 2px solid var(--border) !important;
+    font-weight: 500 !important;
+    background: var(--surface) !important;
+    border: 1px solid var(--border) !important;
     border-left: 3px solid var(--accent) !important;
-    border-radius: 0 !important;
+    border-radius: var(--radius-sm) !important;
     color: var(--accent) !important;
     padding: 0.8rem 1rem !important;
 }
 
 /* Audio player */
 .audio-output {
-    border: 2px solid var(--border) !important;
+    border: 1px solid var(--border) !important;
     background: var(--surface) !important;
-    border-radius: 0 !important;
+    border-radius: var(--radius) !important;
     padding: 1rem !important;
+    box-shadow: var(--shadow-sm) !important;
 }
 
 /* Accordion */
 .gr-accordion {
-    border: 2px solid var(--border) !important;
-    border-radius: 0 !important;
+    border: 1px solid var(--border) !important;
+    border-radius: var(--radius) !important;
     background: var(--surface) !important;
+    overflow: hidden !important;
 }
 .gr-accordion summary, .gr-accordion button {
-    font-family: var(--mono) !important;
+    font-family: var(--sans) !important;
     font-size: 0.75rem !important;
+    font-weight: 500 !important;
     text-transform: uppercase !important;
-    letter-spacing: 0.12em !important;
-    color: var(--text-dim) !important;
+    letter-spacing: 0.06em !important;
+    color: var(--text-secondary) !important;
 }
 
 /* Text preview */
 .text-preview textarea {
     font-family: var(--mono) !important;
     font-size: 0.8rem !important;
-    line-height: 1.6 !important;
+    line-height: 1.7 !important;
     background: var(--bg) !important;
     border: 1px solid var(--border) !important;
-    border-radius: 0 !important;
+    border-radius: var(--radius-sm) !important;
     color: var(--text) !important;
 }
 
@@ -218,7 +234,7 @@ input[type="checkbox"] {
 
 /* Options row */
 .options-row {
-    gap: 1rem !important;
+    gap: 0.75rem !important;
 }
 
 /* Page range inputs */
@@ -227,14 +243,115 @@ input[type="checkbox"] {
     margin-top: 0.5rem !important;
 }
 .page-input input[type="number"] {
-    background: var(--bg) !important;
-    border: 2px solid var(--border) !important;
-    border-radius: 0 !important;
+    background: var(--surface) !important;
+    border: 1px solid var(--border) !important;
+    border-radius: var(--radius-sm) !important;
     color: var(--accent) !important;
     font-family: var(--mono) !important;
     font-size: 1rem !important;
+    font-weight: 500 !important;
     text-align: center !important;
     width: 5rem !important;
+}
+
+/* Radio buttons — override Gradio orange */
+.gr-radio input[type="radio"],
+input[type="radio"] {
+    accent-color: var(--accent) !important;
+}
+/* Radio group pill styling */
+.gr-radio-row label,
+div[data-testid="radio-group"] label {
+    border-radius: var(--radius-sm) !important;
+}
+
+/* Slider — override Gradio orange track */
+input[type="range"] {
+    accent-color: var(--accent) !important;
+}
+input[type="range"]::-webkit-slider-runnable-track {
+    background: var(--border) !important;
+    border-radius: 4px !important;
+    height: 4px !important;
+}
+input[type="range"]::-webkit-slider-thumb {
+    background: var(--accent) !important;
+    border: none !important;
+    border-radius: 50% !important;
+    width: 16px !important;
+    height: 16px !important;
+    margin-top: -6px !important;
+    box-shadow: 0 0 8px var(--accent-glow) !important;
+}
+/* Gradio 6 slider color override */
+.gr-slider input[type="range"],
+div[data-testid="slider"] input[type="range"] {
+    accent-color: var(--accent) !important;
+}
+
+/* Gradio progress/track bar color */
+.range-slider .bar,
+div[data-testid="slider"] .progress {
+    background: var(--accent) !important;
+}
+
+/* Checkbox — override Gradio orange */
+input[type="checkbox"],
+.gr-checkbox input[type="checkbox"] {
+    accent-color: var(--accent) !important;
+}
+.gr-check-radio input:checked {
+    background-color: var(--accent) !important;
+    border-color: var(--accent) !important;
+}
+/* Gradio 6 checkbox/radio SVG color */
+.checkbox-container input:checked,
+label input[type="checkbox"]:checked {
+    accent-color: var(--accent) !important;
+    background-color: var(--accent) !important;
+}
+/* Radio selected pill */
+.radio-group label.selected,
+label.selected span,
+.wrap label input[type="radio"]:checked + span {
+    color: var(--accent) !important;
+    border-color: var(--accent) !important;
+}
+/* Global accent override for Gradio oranges */
+.svelte-cmf5ev, [class*="selected"] {
+    --color-accent: var(--accent) !important;
+    accent-color: var(--accent) !important;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+    width: 6px !important;
+    height: 6px !important;
+}
+::-webkit-scrollbar-track {
+    background: var(--bg) !important;
+}
+::-webkit-scrollbar-thumb {
+    background: var(--border) !important;
+    border-radius: 3px !important;
+}
+::-webkit-scrollbar-thumb:hover {
+    background: var(--border-hover) !important;
+}
+
+/* Completed files panel */
+.gr-files {
+    border: 1px solid var(--border) !important;
+    border-radius: var(--radius) !important;
+    background: var(--surface) !important;
+}
+
+/* Number input spinner */
+input[type="number"] {
+    -moz-appearance: textfield !important;
+}
+input[type="number"]::-webkit-inner-spin-button {
+    opacity: 0.5 !important;
 }
 
 /* Footer kill */
@@ -527,7 +644,7 @@ def create_app() -> gr.Blocks:
 
         # Header
         gr.Markdown(
-            "<h1>TWINKTALKS_</h1><p>pdf &rarr; speech // qwen3-tts</p>",
+            "<h1>Twink<span class='accent'>Talks</span></h1><p>PDF & EPUB to speech — powered by Qwen3-TTS</p>",
             elem_classes=["header-block"],
         )
 
@@ -740,9 +857,78 @@ def create_app() -> gr.Blocks:
     return app
 
 
+def _make_theme():
+    """Create the custom dark theme with yellow accent for Gradio 6."""
+    return gr.themes.Base(
+        primary_hue=gr.themes.Color(
+            c50="#fefff0", c100="#fcffdb", c200="#f5ffb0",
+            c300="#ecff7a", c400="#dfff33", c500="#c8ff00",
+            c600="#a3d000", c700="#7da000", c800="#5a7300",
+            c900="#3d4f00", c950="#243000",
+        ),
+        neutral_hue=gr.themes.Color(
+            c50="#e4e4ed", c100="#c9c9d6", c200="#9191a8",
+            c300="#5c5c72", c400="#36365a", c500="#26263a",
+            c600="#1c1c26", c700="#16161d", c800="#111117",
+            c900="#0c0c10", c950="#08080c",
+        ),
+        font=["Inter", "system-ui", "sans-serif"],
+        font_mono=["JetBrains Mono", "SF Mono", "monospace"],
+    ).set(
+        body_background_fill="#0c0c10",
+        body_background_fill_dark="#0c0c10",
+        block_background_fill="#16161d",
+        block_background_fill_dark="#16161d",
+        block_border_color="#26263a",
+        block_border_color_dark="#26263a",
+        block_label_text_color="#9191a8",
+        block_label_text_color_dark="#9191a8",
+        block_title_text_color="#e4e4ed",
+        block_title_text_color_dark="#e4e4ed",
+        body_text_color="#e4e4ed",
+        body_text_color_dark="#e4e4ed",
+        body_text_color_subdued="#5c5c72",
+        body_text_color_subdued_dark="#5c5c72",
+        input_background_fill="#16161d",
+        input_background_fill_dark="#16161d",
+        input_border_color="#26263a",
+        input_border_color_dark="#26263a",
+        button_primary_background_fill="#c8ff00",
+        button_primary_background_fill_dark="#c8ff00",
+        button_primary_background_fill_hover="#dfff33",
+        button_primary_background_fill_hover_dark="#dfff33",
+        button_primary_text_color="#0c0c10",
+        button_primary_text_color_dark="#0c0c10",
+        button_secondary_background_fill="#16161d",
+        button_secondary_background_fill_dark="#16161d",
+        button_secondary_border_color="#26263a",
+        button_secondary_border_color_dark="#26263a",
+        button_secondary_text_color="#9191a8",
+        button_secondary_text_color_dark="#9191a8",
+        border_color_accent="#c8ff00",
+        border_color_accent_dark="#c8ff00",
+        color_accent="#c8ff00",
+        color_accent_soft="rgba(200,255,0,0.06)",
+        color_accent_soft_dark="rgba(200,255,0,0.06)",
+        block_radius="12px",
+        input_radius="8px",
+        button_large_radius="8px",
+        slider_color="#c8ff00",
+        slider_color_dark="#c8ff00",
+        checkbox_background_color="#16161d",
+        checkbox_background_color_dark="#16161d",
+        checkbox_background_color_selected="#c8ff00",
+        checkbox_background_color_selected_dark="#c8ff00",
+        checkbox_border_color="#26263a",
+        checkbox_border_color_dark="#26263a",
+        checkbox_border_color_selected="#c8ff00",
+        checkbox_border_color_selected_dark="#c8ff00",
+    )
+
+
 def main():
     app = create_app()
-    app.launch(server_name="0.0.0.0", server_port=7860, max_file_size="100mb", css=CUSTOM_CSS)
+    app.launch(server_name="0.0.0.0", server_port=7860, max_file_size="100mb", css=CUSTOM_CSS, theme=_make_theme())
 
 
 if __name__ == "__main__":
