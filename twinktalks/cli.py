@@ -68,6 +68,23 @@ def create_parser() -> argparse.ArgumentParser:
         help=f"Speaking speed 0.5-2.0 (default: {DEFAULT_SPEED})",
     )
     parser.add_argument(
+        "--instruct",
+        type=str,
+        default="",
+        help="Voice style instruction, e.g. 'Speak calmly like a narrator'",
+    )
+    parser.add_argument(
+        "--preset",
+        type=str,
+        default=None,
+        help="Use a voice preset (e.g. 'Calm Narrator', 'Audiobook'). Overrides speaker/speed/instruct.",
+    )
+    parser.add_argument(
+        "--list-presets",
+        action="store_true",
+        help="List available voice presets and exit",
+    )
+    parser.add_argument(
         "--skip-tables",
         action="store_true",
         help="Skip tables and diagrams detected in the PDF",
@@ -200,6 +217,7 @@ def _process_single(
             chunks,
             language=args.language,
             speed=args.speed,
+            instruct=args.instruct,
             progress_callback=progress,
             session_dir=session_dir,
             start_from=start_from,
@@ -215,6 +233,7 @@ def _process_single(
             chunks,
             language=args.language,
             speed=args.speed,
+            instruct=args.instruct,
             progress_callback=progress,
             session_dir=session_dir,
             start_from=start_from,
@@ -242,7 +261,34 @@ def main(argv: list[str] | None = None):
     )
     log = logging.getLogger("twinktalks")
 
+    # Handle --list-presets
+    if args.list_presets:
+        from twinktalks.presets import BUILTIN_PRESETS, load_user_presets
+        print("Built-in presets:")
+        for name, p in BUILTIN_PRESETS.items():
+            instruct_preview = p["instruct"][:60] + "..." if len(p["instruct"]) > 60 else p["instruct"]
+            print(f"  {name:20s}  {p['speaker']:8s}  {p['speed']}x  {instruct_preview or '(default)'}")
+        user = load_user_presets()
+        if user:
+            print("\nUser presets:")
+            for p in user:
+                instruct_preview = p.instruct[:60] + "..." if len(p.instruct) > 60 else p.instruct
+                print(f"  {p.name:20s}  {p.speaker:8s}  {p.speed}x  {instruct_preview or '(default)'}")
+        return
+
     input_path = Path(args.input_file)
+
+    # Apply --preset (overrides speaker, speed, instruct)
+    if args.preset:
+        from twinktalks.presets import resolve_preset
+        preset = resolve_preset(args.preset)
+        if preset is None:
+            log.error("Preset not found: '%s'. Use --list-presets to see available presets.", args.preset)
+            sys.exit(1)
+        args.speaker = preset["speaker"]
+        args.speed = preset["speed"]
+        args.instruct = preset["instruct"]
+        log.info("Using preset: %s (speaker=%s, speed=%s)", args.preset, args.speaker, args.speed)
 
     # Handle --show-toc
     if args.show_toc:

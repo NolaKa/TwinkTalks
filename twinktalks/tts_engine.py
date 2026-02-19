@@ -100,11 +100,13 @@ class TTSEngine:
         text: str,
         language: str = DEFAULT_LANGUAGE,
         speed: float = DEFAULT_SPEED,
+        instruct: str = "",
     ) -> tuple[np.ndarray, int]:
         """Generate audio for a single text chunk.
 
         Args:
             speed: Speaking rate, 0.5 (slow) to 2.0 (fast). Default 1.0.
+            instruct: Natural language instruction for voice style (e.g. "Speak calmly").
 
         Returns:
             Tuple of (waveform as numpy array, sample rate).
@@ -118,7 +120,7 @@ class TTSEngine:
                 language=language,
                 speaker=self.speaker,
                 speed=speed,
-                instruct="",
+                instruct=instruct,
                 max_new_tokens=MAX_NEW_TOKENS,
                 top_k=TOP_K,
                 top_p=TOP_P,
@@ -134,6 +136,7 @@ class TTSEngine:
         chunks: list[Chunk],
         language: str = DEFAULT_LANGUAGE,
         speed: float = DEFAULT_SPEED,
+        instruct: str = "",
         progress_callback: Callable[[int, int], None] | None = None,
         session_dir: "Path | None" = None,
         start_from: int = 0,
@@ -176,7 +179,7 @@ class TTSEngine:
             waveform = None
             for attempt in range(max_retries):
                 try:
-                    waveform, sample_rate = self.synthesize(chunk.text, language, speed)
+                    waveform, sample_rate = self.synthesize(chunk.text, language, speed, instruct)
                     break
                 except SynthesisError:
                     if attempt < max_retries - 1:
@@ -209,6 +212,7 @@ class TTSEngine:
         chunks: list[Chunk],
         language: str = DEFAULT_LANGUAGE,
         speed: float = DEFAULT_SPEED,
+        instruct: str = "",
         session_dir: "Path | None" = None,
         start_from: int = 0,
     ):
@@ -240,7 +244,7 @@ class TTSEngine:
             waveform = None
             for attempt in range(max_retries):
                 try:
-                    waveform, sample_rate = self.synthesize(chunk.text, language, speed)
+                    waveform, sample_rate = self.synthesize(chunk.text, language, speed, instruct)
                     break
                 except SynthesisError:
                     if attempt < max_retries - 1:

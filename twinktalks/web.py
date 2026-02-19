@@ -330,6 +330,7 @@ def process_pdf(
     speed: float,
     skip_references: bool,
     skip_tables: bool,
+    instruct: str = "",
 ) -> tuple[str, str | None, str]:
     """Full pipeline: PDF -> text -> audio."""
     if pdf_file is None:
@@ -370,7 +371,7 @@ def process_pdf(
 
         prev_tmp = None
         for cumulative, sample_rate, current, total_chunks in engine.synthesize_chunks_streaming(
-            chunks, language=language, speed=speed,
+            chunks, language=language, speed=speed, instruct=instruct or "",
         ):
             # Use readable name; append chunk count to force Gradio cache refresh
             tmp_path = os.path.join(tmp_dir, f"{stem}_{current}of{total_chunks}.wav")
@@ -493,6 +494,33 @@ def create_app() -> gr.Blocks:
                 label="SKIP TABLES",
             )
 
+        # Voice style
+        with gr.Accordion("VOICE STYLE", open=False):
+            from twinktalks.presets import get_all_preset_names, resolve_preset, save_user_preset, VoicePreset
+
+            preset_dropdown = gr.Dropdown(
+                choices=get_all_preset_names(),
+                value="Default",
+                label="PRESET",
+            )
+            instruct_box = gr.Textbox(
+                value="",
+                label="INSTRUCT",
+                placeholder="e.g. Speak calmly like an audiobook narrator",
+                lines=2,
+            )
+            with gr.Row():
+                save_name = gr.Textbox(
+                    label="SAVE AS",
+                    placeholder="My Preset",
+                    scale=3,
+                )
+                save_btn = gr.Button(
+                    "SAVE",
+                    elem_classes=["preview-btn"],
+                    scale=1,
+                )
+
         # Actions
         with gr.Row():
             preview_btn = gr.Button(
@@ -553,8 +581,43 @@ def create_app() -> gr.Blocks:
         )
         generate_btn.click(
             fn=process_pdf,
-            inputs=[pdf_input, page_start, page_end, page_info, speaker, language, speed_slider, skip_refs, skip_tables],
+            inputs=[pdf_input, page_start, page_end, page_info, speaker, language, speed_slider, skip_refs, skip_tables, instruct_box],
             outputs=[status, audio_output, text_preview],
+        )
+
+        # Preset selection -> apply settings
+        def on_preset_select(preset_name):
+            preset = resolve_preset(preset_name)
+            if preset is None:
+                return gr.update(), gr.update(), gr.update()
+            return (
+                gr.update(value=preset["speaker"]),
+                gr.update(value=preset["speed"]),
+                gr.update(value=preset["instruct"]),
+            )
+
+        preset_dropdown.change(
+            fn=on_preset_select,
+            inputs=[preset_dropdown],
+            outputs=[speaker, speed_slider, instruct_box],
+        )
+
+        # Save preset
+        def on_save_preset(name, spkr, spd, inst):
+            if not name or not name.strip():
+                return gr.update()
+            save_user_preset(VoicePreset(
+                name=name.strip(),
+                speaker=spkr,
+                speed=spd,
+                instruct=inst,
+            ))
+            return gr.update(choices=get_all_preset_names(), value=f"* {name.strip()}")
+
+        save_btn.click(
+            fn=on_save_preset,
+            inputs=[save_name, speaker, speed_slider, instruct_box],
+            outputs=[preset_dropdown],
         )
 
     return app
