@@ -57,8 +57,6 @@ python -m twinktalks.web
 # Open http://localhost:7860
 ```
 
-![voice style](assets/screenshot-voice-style.png)
-
 #### Single file mode
 
 Upload a PDF or EPUB. The UI shows:
