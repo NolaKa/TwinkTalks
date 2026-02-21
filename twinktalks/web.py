@@ -245,8 +245,21 @@ input[type="checkbox"]:checked::after {
     letter-spacing: 0.12em !important;
     color: var(--amber-dim) !important;
 }
+/* Kill intermediate block wrapper inside accordion */
+.gr-accordion > div > div[class*="block"] {
+    border: none !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+    background: none !important;
+}
 
 /* Text preview */
+.text-preview {
+    border: none !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+    background: none !important;
+}
 .text-preview textarea {
     font-family: var(--mono) !important;
     font-size: 0.75rem !important;
@@ -381,6 +394,10 @@ input[type="number"]::-webkit-inner-spin-button { opacity: 0.5 !important; }
     border: none !important;
     padding: 0 !important;
     min-width: 0 !important;
+    width: calc(50% - 1rem) !important;
+    flex: 0 0 calc(50% - 1rem) !important;
+    max-width: calc(50% - 1rem) !important;
+    overflow: hidden !important;
 }
 .panel-label {
     background: none !important;
@@ -809,6 +826,7 @@ def create_app() -> gr.Blocks:
                 with gr.Accordion("EXTRACTED TEXT", open=False):
                     text_preview = gr.Textbox(
                         label="", lines=15, interactive=False,
+                        show_label=False,
                         elem_classes=["text-preview"],
                     )
 
