@@ -264,4 +264,4 @@ source .venv/bin/activate
 python -m pytest tests/ -v
 ```
 
-133 unit tests covering: text preprocessor, chunker (including page-aware chunking), PDF extractor, EPUB extractor, extractor router, TOC, sessions, presets, CLI batch helpers, chapter markers (ID3 embedding + reading back), chunk offset computation, chunk-to-chapter mapping.
+148 unit tests covering: text preprocessor, chunker (including page-aware chunking), PDF extractor, EPUB extractor, extractor router, TOC, sessions, presets, CLI batch helpers, chapter markers (ID3 embedding + reading back), chunk offset computation, chunk-to-chapter mapping.

@@ -11,3 +11,17 @@ output/
 .DS_Store
 *.pdf
 models/
+
+# Secrets
+.env
+.env.*
+
+# Logs
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~

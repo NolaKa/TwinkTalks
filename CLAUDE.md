@@ -70,7 +70,7 @@ python -m twinktalks.web                         # http://localhost:7860
 python -m pytest tests/ -v
 ```
 
-133 unit tests covering preprocessor, chunker (including page-aware), pdf_extractor, epub_extractor, extractor router, toc, session, presets, cli batch helpers, chapter markers (ID3 embedding), chunk offsets, chunk-to-chapter mapping. TTS engine tests require the model (manual).
+148 unit tests covering preprocessor, chunker (including page-aware), pdf_extractor, epub_extractor, extractor router, toc, session, presets, cli batch helpers, chapter markers (ID3 embedding), chunk offsets, chunk-to-chapter mapping. TTS engine tests require the model (manual).
 
 ## Dependencies
 

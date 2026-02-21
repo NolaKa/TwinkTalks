@@ -486,8 +486,8 @@ def on_files_upload(files):
                 indent = "  " * (ch.level - 1)
                 pages = f"p.{ch.start_page}-{ch.end_page}"
                 toc_choices.append(f"{indent}{ch.title}  [{pages}]")
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("TOC extraction failed: %s", e)
 
         show_toc = len(toc_choices) > 1
 
@@ -499,6 +499,7 @@ def on_files_upload(files):
             f"// LOADED — {total} pages" + (f", {len(toc_choices) - 1} chapters" if show_toc else ""),
         )
     except Exception as e:
+        logger.exception("File upload failed: %s", e)
         return (
             gr.update(visible=False), gr.update(visible=False), gr.update(visible=False),
             gr.update(visible=False, choices=[], value=None),
@@ -517,7 +518,8 @@ def on_chapter_select(chapter_choice, files):
         try:
             total = get_item_count(pdf_file.name)
             return gr.update(value=1), gr.update(value=total)
-        except Exception:
+        except Exception as e:
+            logger.warning("Failed to get page count: %s", e)
             return gr.update(), gr.update()
 
     # Parse page range from the choice string: "Title  [p.3-7]"
@@ -620,8 +622,8 @@ def _synthesize_single_file(
                         )
                         if audio_chapters:
                             add_chapter_markers(final_path, audio_chapters)
-                except Exception:
-                    pass  # Chapter markers are best-effort
+                except Exception as e:
+                    logger.warning("Chapter marker embedding failed: %s", e)
 
             yield f"{status_prefix}// DONE — {duration:.1f}s audio / {word_count} words / {total_chunks} chunks", final_path, text
 
@@ -697,6 +699,7 @@ def process_queue(
         )
 
     except Exception as e:
+        logger.exception("Generation failed: %s", e)
         yield f"// ERROR — {e}", None, "", None
 
 
