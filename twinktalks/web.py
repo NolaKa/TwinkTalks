@@ -54,7 +54,7 @@ CUSTOM_CSS = """
 body, .gradio-container {
     background: var(--bg) !important;
     font-family: var(--mono) !important;
-    max-width: 800px !important;
+    max-width: 1100px !important;
     margin: 0 auto !important;
     color: var(--text) !important;
 }
@@ -77,15 +77,15 @@ body, .gradio-container {
 
 /* Header */
 .header-block {
-    border-bottom: 1px solid var(--border) !important;
+    border: none !important;
     padding: 2rem 0 1rem !important;
-    margin-bottom: 1.5rem !important;
+    margin-bottom: 1rem !important;
     background: none !important;
     text-align: center !important;
 }
 .header-block h1 {
     font-family: var(--mono) !important;
-    font-size: 1.6rem !important;
+    font-size: 2.8rem !important;
     font-weight: 700 !important;
     color: var(--amber) !important;
     letter-spacing: 0.15em !important;
@@ -102,9 +102,8 @@ body, .gradio-container {
     text-transform: uppercase !important;
 }
 
-/* Kill all border-radius */
-.gr-panel, .gr-box, .gr-form, .gr-input-label,
-div[class*="block"], div[class*="wrap"] {
+/* Kill ALL border-radius — nuclear */
+*, *::before, *::after {
     border-radius: 0 !important;
 }
 
@@ -123,8 +122,9 @@ label, .gr-input-label, span[data-testid="block-label"] {
     border: 1px solid var(--border) !important;
     background: var(--bg) !important;
     border-radius: 0 !important;
-    padding: 2.5rem 2rem !important;
+    padding: 1.2rem 1rem !important;
     transition: border-color 0.15s !important;
+    min-height: 120px !important;
 }
 .upload-zone:hover {
     border-color: var(--amber) !important;
@@ -147,9 +147,29 @@ select:focus, input:focus, textarea:focus {
     box-shadow: none !important;
 }
 
-/* Checkbox */
+/* Checkbox — square terminal style */
 input[type="checkbox"] {
-    accent-color: var(--amber) !important;
+    -webkit-appearance: none !important;
+    appearance: none !important;
+    width: 14px !important;
+    height: 14px !important;
+    border: 1px solid var(--amber-dim) !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    cursor: pointer !important;
+    position: relative !important;
+    vertical-align: middle !important;
+}
+input[type="checkbox"]:checked {
+    border-color: var(--amber) !important;
+    background: transparent !important;
+}
+input[type="checkbox"]:checked::after {
+    content: "" !important;
+    position: absolute !important;
+    top: 2px !important; left: 2px !important;
+    width: 8px !important; height: 8px !important;
+    background: var(--amber) !important;
 }
 
 /* Buttons */
@@ -237,13 +257,6 @@ input[type="checkbox"] {
     color: var(--amber-dim) !important;
 }
 
-/* Section divider */
-.divider {
-    border-top: 1px solid var(--border) !important;
-    margin: 1rem 0 !important;
-    background: none !important;
-}
-
 /* Options row */
 .options-row {
     gap: 0.5rem !important;
@@ -265,10 +278,29 @@ input[type="checkbox"] {
     width: 5rem !important;
 }
 
-/* Radio/checkbox — amber accent */
-.gr-radio input[type="radio"],
+/* Radio — square terminal style */
 input[type="radio"] {
-    accent-color: var(--amber) !important;
+    -webkit-appearance: none !important;
+    appearance: none !important;
+    width: 14px !important;
+    height: 14px !important;
+    border: 1px solid var(--amber-dim) !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    cursor: pointer !important;
+    position: relative !important;
+    vertical-align: middle !important;
+}
+input[type="radio"]:checked {
+    border-color: var(--amber) !important;
+    background: transparent !important;
+}
+input[type="radio"]:checked::after {
+    content: "" !important;
+    position: absolute !important;
+    top: 2px !important; left: 2px !important;
+    width: 8px !important; height: 8px !important;
+    background: var(--amber) !important;
 }
 div[data-testid="radio-group"] label {
     border-radius: 0 !important;
@@ -298,29 +330,28 @@ div[data-testid="slider"] .progress {
     background: var(--amber) !important;
 }
 
-/* Checkbox/radio overrides */
-input[type="checkbox"],
-.gr-checkbox input[type="checkbox"] {
-    accent-color: var(--amber) !important;
-}
+/* Checkbox/radio color overrides */
 .gr-check-radio input:checked {
     background-color: var(--amber) !important;
     border-color: var(--amber) !important;
 }
-.checkbox-container input:checked,
-label input[type="checkbox"]:checked {
-    accent-color: var(--amber) !important;
-    background-color: var(--amber) !important;
-}
 .radio-group label.selected,
-label.selected span,
-.wrap label input[type="radio"]:checked + span {
+label.selected span {
     color: var(--amber) !important;
     border-color: var(--amber) !important;
 }
-.svelte-cmf5ev, [class*="selected"] {
+[class*="selected"] {
     --color-accent: var(--amber) !important;
-    accent-color: var(--amber) !important;
+}
+
+/* Dropdown arrow — square */
+select {
+    -webkit-appearance: none !important;
+    appearance: none !important;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23d4a017'/%3E%3C/svg%3E") !important;
+    background-repeat: no-repeat !important;
+    background-position: right 0.7rem center !important;
+    padding-right: 2rem !important;
 }
 
 /* Scrollbar */
@@ -338,6 +369,46 @@ label.selected span,
 /* Number input */
 input[type="number"] { -moz-appearance: textfield !important; }
 input[type="number"]::-webkit-inner-spin-button { opacity: 0.5 !important; }
+
+/* Two-column layout */
+.main-row {
+    gap: 2rem !important;
+    align-items: flex-start !important;
+    flex-wrap: nowrap !important;
+}
+.panel-left, .panel-right {
+    background: none !important;
+    border: none !important;
+    padding: 0 !important;
+    min-width: 0 !important;
+}
+.panel-label {
+    background: none !important;
+    border: none !important;
+    padding: 0 !important;
+    margin: 0 0 0.8rem 0 !important;
+}
+.panel-label p {
+    font-family: var(--mono) !important;
+    font-size: 1.1rem !important;
+    color: var(--amber) !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.2em !important;
+    margin: 0 !important;
+    border: none !important;
+    padding: 0 !important;
+}
+
+/* Kill stray Gradio borders/lines */
+.gradio-container .contain,
+.gradio-container .wrap,
+.gradio-container .app {
+    border: none !important;
+}
+div[class*="block"].hide-container {
+    border: none !important;
+    box-shadow: none !important;
+}
 
 /* Footer kill */
 footer { display: none !important; }
@@ -633,166 +704,123 @@ def create_app() -> gr.Blocks:
             elem_classes=["header-block"],
         )
 
-        # Upload (multiple files supported for queue mode)
-        pdf_input = gr.File(
-            label="INPUT",
-            file_types=[".pdf", ".epub"],
-            file_count="multiple",
-            elem_classes=["upload-zone"],
-        )
+        # === Two-column layout ===
+        with gr.Row(elem_classes=["main-row"], equal_height=False):
 
-        # Page range (hidden until PDF loaded)
-        with gr.Row(elem_classes=["page-range"]):
-            page_start = gr.Number(
-                value=1,
-                label="FROM PAGE",
-                minimum=1,
-                precision=0,
-                visible=False,
-                elem_classes=["page-input"],
-            )
-            page_end = gr.Number(
-                value=1,
-                label="TO PAGE",
-                minimum=1,
-                precision=0,
-                visible=False,
-                elem_classes=["page-input"],
-            )
-            # Hidden field to store total page count
-            page_info = gr.Textbox(value="", visible=False)
+            # ---- LEFT COLUMN: Input & Controls ----
+            with gr.Column(scale=1, elem_classes=["panel-left"]):
+                gr.Markdown("&gt; input", elem_classes=["panel-label"])
 
-        # Chapter selector (hidden until PDF with TOC loaded)
-        chapter_dropdown = gr.Dropdown(
-            choices=["All pages"],
-            value="All pages",
-            label="CHAPTER",
-            visible=False,
-        )
-
-        # Options row
-        with gr.Row(elem_classes=["options-row"]):
-            speaker = gr.Dropdown(
-                choices=AVAILABLE_SPEAKERS,
-                value=DEFAULT_SPEAKER,
-                label="VOICE",
-            )
-            language = gr.Dropdown(
-                choices=["Auto", "English", "Chinese", "Japanese", "Korean",
-                         "German", "French", "Russian", "Portuguese",
-                         "Spanish", "Italian"],
-                value=DEFAULT_LANGUAGE,
-                label="LANGUAGE",
-            )
-            speed_slider = gr.Slider(
-                minimum=SPEED_MIN,
-                maximum=SPEED_MAX,
-                value=DEFAULT_SPEED,
-                step=0.1,
-                label="SPEED",
-            )
-
-        with gr.Row(elem_classes=["options-row"]):
-            skip_refs = gr.Checkbox(
-                value=True,
-                label="SKIP REFERENCES",
-            )
-            skip_tables = gr.Checkbox(
-                value=False,
-                label="SKIP TABLES",
-            )
-            output_format = gr.Radio(
-                choices=["wav", "mp3"],
-                value="wav",
-                label="FORMAT",
-            )
-
-        # Voice style
-        with gr.Accordion("VOICE STYLE", open=False):
-            from twinktalks.presets import get_all_preset_names, resolve_preset, save_user_preset, VoicePreset
-
-            preset_dropdown = gr.Dropdown(
-                choices=get_all_preset_names(),
-                value="Default",
-                label="PRESET",
-            )
-            instruct_box = gr.Textbox(
-                value="",
-                label="INSTRUCT",
-                placeholder="e.g. Speak calmly like an audiobook narrator",
-                lines=2,
-            )
-            with gr.Row():
-                save_name = gr.Textbox(
-                    label="SAVE AS",
-                    placeholder="My Preset",
-                    scale=3,
-                )
-                save_btn = gr.Button(
-                    "SAVE",
-                    elem_classes=["preview-btn"],
-                    scale=1,
+                pdf_input = gr.File(
+                    label="FILE",
+                    file_types=[".pdf", ".epub"],
+                    file_count="multiple",
+                    elem_classes=["upload-zone"],
                 )
 
-        # Actions
-        with gr.Row():
-            preview_btn = gr.Button(
-                "PREVIEW TEXT",
-                elem_classes=["preview-btn"],
-            )
-            generate_btn = gr.Button(
-                "GENERATE",
-                variant="primary",
-                elem_classes=["generate-btn"],
-            )
+                # Page range (hidden until file loaded)
+                with gr.Row(elem_classes=["page-range"]):
+                    page_start = gr.Number(
+                        value=1, label="FROM PAGE", minimum=1, precision=0,
+                        visible=False, elem_classes=["page-input"],
+                    )
+                    page_end = gr.Number(
+                        value=1, label="TO PAGE", minimum=1, precision=0,
+                        visible=False, elem_classes=["page-input"],
+                    )
+                    page_info = gr.Textbox(value="", visible=False)
 
-        # Divider
-        gr.HTML("<div class='divider'></div>")
+                chapter_dropdown = gr.Dropdown(
+                    choices=["All pages"], value="All pages",
+                    label="CHAPTER", visible=False,
+                )
 
-        # Status
-        status = gr.Textbox(
-            label="STATUS",
-            interactive=False,
-            value="// READY",
-            elem_classes=["status-bar"],
-        )
 
-        # Audio output
-        audio_output = gr.Audio(
-            label="OUTPUT",
-            type="filepath",
-            elem_classes=["audio-output"],
-        )
+                # Voice settings
+                with gr.Row(elem_classes=["options-row"]):
+                    speaker = gr.Dropdown(
+                        choices=AVAILABLE_SPEAKERS, value=DEFAULT_SPEAKER,
+                        label="VOICE",
+                    )
+                    language = gr.Dropdown(
+                        choices=["Auto", "English", "Chinese", "Japanese", "Korean",
+                                 "German", "French", "Russian", "Portuguese",
+                                 "Spanish", "Italian"],
+                        value=DEFAULT_LANGUAGE, label="LANGUAGE",
+                    )
 
-        # Completed files (queue mode — shows all finished files for download)
-        completed_files = gr.Files(
-            label="COMPLETED FILES",
-            visible=False,
-        )
+                speed_slider = gr.Slider(
+                    minimum=SPEED_MIN, maximum=SPEED_MAX,
+                    value=DEFAULT_SPEED, step=0.1, label="SPEED",
+                )
 
-        # Text preview
-        with gr.Accordion("EXTRACTED TEXT", open=False):
-            text_preview = gr.Textbox(
-                label="",
-                lines=15,
-                interactive=False,
-                elem_classes=["text-preview"],
-            )
+                with gr.Row(elem_classes=["options-row"]):
+                    skip_refs = gr.Checkbox(value=True, label="SKIP REFERENCES")
+                    skip_tables = gr.Checkbox(value=False, label="SKIP TABLES")
 
-        # Events: on upload -> detect pages, show page selectors and TOC
+                output_format = gr.Radio(
+                    choices=["wav", "mp3"], value="wav", label="FORMAT",
+                )
+
+
+                # Voice style
+                with gr.Accordion("VOICE STYLE", open=False):
+                    from twinktalks.presets import get_all_preset_names, resolve_preset, save_user_preset, VoicePreset
+
+                    preset_dropdown = gr.Dropdown(
+                        choices=get_all_preset_names(), value="Default",
+                        label="PRESET",
+                    )
+                    instruct_box = gr.Textbox(
+                        value="", label="INSTRUCT",
+                        placeholder="e.g. Speak calmly like an audiobook narrator",
+                        lines=2,
+                    )
+                    with gr.Row():
+                        save_name = gr.Textbox(
+                            label="SAVE AS", placeholder="My Preset", scale=3,
+                        )
+                        save_btn = gr.Button("SAVE", elem_classes=["preview-btn"], scale=1)
+
+                # Action buttons
+                with gr.Row():
+                    preview_btn = gr.Button("PREVIEW TEXT", elem_classes=["preview-btn"])
+                    generate_btn = gr.Button("GENERATE", variant="primary", elem_classes=["generate-btn"])
+
+            # ---- RIGHT COLUMN: Output ----
+            with gr.Column(scale=1, elem_classes=["panel-right"]):
+                gr.Markdown("&gt; output", elem_classes=["panel-label"])
+
+                status = gr.Textbox(
+                    label="STATUS", interactive=False, value="// READY",
+                    elem_classes=["status-bar"],
+                )
+
+                audio_output = gr.Audio(
+                    label="OUTPUT", type="filepath",
+                    elem_classes=["audio-output"],
+                )
+
+                completed_files = gr.Files(
+                    label="COMPLETED FILES", visible=False,
+                )
+
+
+                with gr.Accordion("EXTRACTED TEXT", open=False):
+                    text_preview = gr.Textbox(
+                        label="", lines=15, interactive=False,
+                        elem_classes=["text-preview"],
+                    )
+
+        # === Events ===
         pdf_input.change(
-            fn=on_files_upload,
-            inputs=[pdf_input],
+            fn=on_files_upload, inputs=[pdf_input],
             outputs=[page_start, page_end, page_info, chapter_dropdown, status],
         )
-
-        # Chapter selection -> update page range
         chapter_dropdown.change(
-            fn=on_chapter_select,
-            inputs=[chapter_dropdown, pdf_input],
+            fn=on_chapter_select, inputs=[chapter_dropdown, pdf_input],
             outputs=[page_start, page_end],
         )
-
         preview_btn.click(
             fn=extract_only,
             inputs=[pdf_input, page_start, page_end, page_info, skip_refs, skip_tables],
@@ -804,7 +832,6 @@ def create_app() -> gr.Blocks:
             outputs=[status, audio_output, text_preview, completed_files],
         )
 
-        # Preset selection -> apply settings
         def on_preset_select(preset_name):
             preset = resolve_preset(preset_name)
             if preset is None:
@@ -816,20 +843,15 @@ def create_app() -> gr.Blocks:
             )
 
         preset_dropdown.change(
-            fn=on_preset_select,
-            inputs=[preset_dropdown],
+            fn=on_preset_select, inputs=[preset_dropdown],
             outputs=[speaker, speed_slider, instruct_box],
         )
 
-        # Save preset
         def on_save_preset(name, spkr, spd, inst):
             if not name or not name.strip():
                 return gr.update()
             save_user_preset(VoicePreset(
-                name=name.strip(),
-                speaker=spkr,
-                speed=spd,
-                instruct=inst,
+                name=name.strip(), speaker=spkr, speed=spd, instruct=inst,
             ))
             return gr.update(choices=get_all_preset_names(), value=f"* {name.strip()}")
 
