@@ -11,6 +11,7 @@ from twinktalks.audio_utils import generate_silence, get_duration_seconds, compu
 from twinktalks.chunker import Chunk
 from twinktalks.config import (
     MODEL_ID,
+    MODELSCOPE_ID,
     DEFAULT_SPEAKER,
     DEFAULT_LANGUAGE,
     DEFAULT_SPEED,
@@ -38,6 +39,10 @@ class SynthesisError(Exception):
     """Raised when TTS synthesis fails."""
 
 
+class ModelDownloadError(Exception):
+    """Raised when model download fails from all sources."""
+
+
 class TTSEngine:
     """Wrapper around Qwen3-TTS CustomVoice model."""
 
@@ -46,28 +51,29 @@ class TTSEngine:
         model_id: str = MODEL_ID,
         speaker: str = DEFAULT_SPEAKER,
         device: str = DEVICE,
+        model_path: str | None = None,
     ):
         self.model_id = model_id
         self.speaker = speaker
         self.device = device
+        self.model_path = model_path
         self.model = None
 
-    def load_model(self):
-        """Load the Qwen3-TTS model onto the specified device.
-
-        On first run, downloads ~3.5GB from HuggingFace (with progress bar).
-        Subsequent runs load from cache (~/.cache/huggingface/).
-        """
+    def _load_from_path(self, path: str, dtype):
+        """Load model from a local directory."""
         from qwen_tts import Qwen3TTSModel
 
-        dtype_map = {"float16": torch.float16, "float32": torch.float32}
-        dtype = dtype_map.get(DTYPE, torch.float16)
+        print(f"[TwinkTalks] Loading model from local path: {path}")
+        self.model = Qwen3TTSModel.from_pretrained(
+            path,
+            device_map=self.device,
+            dtype=dtype,
+            attn_implementation=ATTN_IMPL,
+        )
 
-        print(f"[TwinkTalks] Loading model: {self.model_id}")
-        print(f"[TwinkTalks] Device: {self.device} | Dtype: {DTYPE} | Attn: {ATTN_IMPL}")
-        print(f"[TwinkTalks] First run downloads ~3.5GB — this may take a few minutes...")
-        print(f"[TwinkTalks] Progress bar should appear below. If stuck, check your network.")
-        logger.info("Loading model %s on %s...", self.model_id, self.device)
+    def _load_from_huggingface(self, dtype):
+        """Try loading from HuggingFace Hub."""
+        from qwen_tts import Qwen3TTSModel
 
         # Enable HuggingFace download logging
         try:
@@ -81,6 +87,7 @@ class TTSEngine:
         except Exception:
             pass
 
+        print(f"[TwinkTalks] Downloading from HuggingFace: {self.model_id}")
         self.model = Qwen3TTSModel.from_pretrained(
             self.model_id,
             device_map=self.device,
@@ -88,10 +95,98 @@ class TTSEngine:
             attn_implementation=ATTN_IMPL,
         )
 
-        # Sync MPS device after loading
+    def _download_from_modelscope(self) -> str:
+        """Download model from ModelScope and return the local path."""
+        try:
+            from modelscope import snapshot_download
+        except ImportError:
+            raise ModelDownloadError(
+                "ModelScope fallback requires the 'modelscope' package.\n"
+                "Install it with: pip install modelscope\n"
+                "Then re-run TwinkTalks."
+            )
+
+        print(f"[TwinkTalks] Downloading from ModelScope: {MODELSCOPE_ID}")
+        print("[TwinkTalks] This is an alternative source that doesn't require a HuggingFace account.")
+        local_dir = snapshot_download(MODELSCOPE_ID)
+        return local_dir
+
+    def load_model(self):
+        """Load the Qwen3-TTS model onto the specified device.
+
+        Loading order:
+        1. Local path (if --model-path was given)
+        2. HuggingFace Hub (default, works without account for public models)
+        3. ModelScope fallback (if HF fails with rate limit / auth errors)
+
+        On first run, downloads ~3.5GB. Subsequent runs load from cache.
+        """
+        from qwen_tts import Qwen3TTSModel
+
+        dtype_map = {"float16": torch.float16, "float32": torch.float32}
+        dtype = dtype_map.get(DTYPE, torch.float16)
+
+        print(f"[TwinkTalks] Device: {self.device} | Dtype: {DTYPE} | Attn: {ATTN_IMPL}")
+        logger.info("Loading model on %s...", self.device)
+
+        # 1. Local path takes priority
+        if self.model_path:
+            from pathlib import Path
+            p = Path(self.model_path).expanduser()
+            if not p.is_dir():
+                raise ModelDownloadError(f"Model path does not exist: {p}")
+            self._load_from_path(str(p), dtype)
+            self._post_load()
+            return
+
+        # 2. Try HuggingFace
+        print(f"[TwinkTalks] First run downloads ~3.5GB — this may take a few minutes...")
+        try:
+            self._load_from_huggingface(dtype)
+            self._post_load()
+            return
+        except Exception as hf_err:
+            hf_msg = str(hf_err)
+            is_rate_or_auth = any(
+                s in hf_msg for s in ("429", "401", "403", "rate limit", "Too Many Requests",
+                                       "Unauthorized", "Forbidden", "must be authenticated",
+                                       "Access denied", "gated repo")
+            )
+            if not is_rate_or_auth:
+                raise
+
+            print(f"\n[TwinkTalks] HuggingFace download failed: {hf_msg}")
+            print("[TwinkTalks] Trying ModelScope as fallback...")
+            logger.warning("HuggingFace download failed (%s), trying ModelScope...", hf_msg)
+
+        # 3. ModelScope fallback
+        try:
+            local_dir = self._download_from_modelscope()
+            self._load_from_path(local_dir, dtype)
+            self._post_load()
+            return
+        except ModelDownloadError:
+            raise
+        except Exception as ms_err:
+            raise ModelDownloadError(
+                f"Could not download the model from any source.\n\n"
+                f"HuggingFace error: {hf_msg}\n"
+                f"ModelScope error: {ms_err}\n\n"
+                f"You can download the model manually and use --model-path:\n\n"
+                f"  Option A — HuggingFace (requires free account):\n"
+                f"    pip install -U 'huggingface_hub[cli]'\n"
+                f"    huggingface-cli login\n"
+                f"    huggingface-cli download {self.model_id} --local-dir ./model\n\n"
+                f"  Option B — ModelScope (no account needed):\n"
+                f"    pip install modelscope\n"
+                f"    modelscope download --model {MODELSCOPE_ID} --local_dir ./model\n\n"
+                f"Then run: twinktalks --model-path ./model your_file.pdf"
+            ) from ms_err
+
+    def _post_load(self):
+        """Post-load setup: MPS sync and success message."""
         if self.device == "mps" and torch.backends.mps.is_available():
             torch.mps.synchronize()
-
         print("[TwinkTalks] Model loaded successfully!")
         logger.info("Model loaded successfully.")
 

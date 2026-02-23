@@ -2,6 +2,7 @@
 
 # Model
 MODEL_ID = "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice"
+MODELSCOPE_ID = "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice"
 DEFAULT_SPEAKER = "Aiden"
 DEFAULT_LANGUAGE = "English"
 AVAILABLE_SPEAKERS = [

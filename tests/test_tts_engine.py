@@ -7,7 +7,7 @@ from unittest.mock import patch, MagicMock
 torch = pytest.importorskip("torch", reason="torch not installed")
 
 from twinktalks.chunker import Chunk
-from twinktalks.tts_engine import TTSEngine, SynthesisError, _concatenate_segments
+from twinktalks.tts_engine import TTSEngine, SynthesisError, ModelDownloadError, _concatenate_segments
 
 
 def _make_chunks(texts, paragraph_ends=None):
@@ -59,15 +59,73 @@ class TestSynthesisError:
         assert "model failed" in str(err)
 
 
+class TestModelDownloadError:
+    def test_is_exception(self):
+        assert issubclass(ModelDownloadError, Exception)
+
+    def test_message(self):
+        err = ModelDownloadError("download failed")
+        assert "download failed" in str(err)
+
+
 class TestTTSEngineInit:
     def test_default_init(self):
         engine = TTSEngine()
         assert engine.model is None
         assert engine.speaker == "Aiden"
+        assert engine.model_path is None
 
     def test_custom_speaker(self):
         engine = TTSEngine(speaker="Ryan")
         assert engine.speaker == "Ryan"
+
+    def test_model_path(self):
+        engine = TTSEngine(model_path="/some/path")
+        assert engine.model_path == "/some/path"
+
+
+class TestLoadModelPath:
+    def test_nonexistent_path_raises(self):
+        engine = TTSEngine(model_path="/nonexistent/model/dir")
+        with pytest.raises(ModelDownloadError, match="does not exist"):
+            engine.load_model()
+
+    @patch.object(TTSEngine, "_load_from_path")
+    @patch.object(TTSEngine, "_post_load")
+    def test_valid_local_path_skips_hf(self, mock_post, mock_load, tmp_path):
+        """When model_path is set and exists, should load locally without trying HF."""
+        engine = TTSEngine(model_path=str(tmp_path))
+        engine.load_model()
+        mock_load.assert_called_once_with(str(tmp_path), torch.float16)
+        mock_post.assert_called_once()
+
+    @patch.object(TTSEngine, "_load_from_huggingface")
+    @patch.object(TTSEngine, "_post_load")
+    def test_no_path_tries_huggingface(self, mock_post, mock_hf):
+        """When no model_path, should try HuggingFace."""
+        engine = TTSEngine()
+        engine.load_model()
+        mock_hf.assert_called_once()
+        mock_post.assert_called_once()
+
+    @patch.object(TTSEngine, "_download_from_modelscope", return_value="/tmp/model")
+    @patch.object(TTSEngine, "_load_from_path")
+    @patch.object(TTSEngine, "_post_load")
+    @patch.object(TTSEngine, "_load_from_huggingface", side_effect=Exception("429 Too Many Requests"))
+    def test_hf_rate_limit_falls_back_to_modelscope(self, mock_hf, mock_post, mock_load, mock_ms):
+        """When HF fails with 429, should fall back to ModelScope."""
+        engine = TTSEngine()
+        engine.load_model()
+        mock_hf.assert_called_once()
+        mock_ms.assert_called_once()
+        mock_load.assert_called_once_with("/tmp/model", torch.float16)
+
+    @patch.object(TTSEngine, "_load_from_huggingface", side_effect=Exception("some random error"))
+    def test_non_auth_error_does_not_fallback(self, mock_hf):
+        """Non-auth/rate-limit errors should propagate immediately, not fall back."""
+        engine = TTSEngine()
+        with pytest.raises(Exception, match="some random error"):
+            engine.load_model()
 
 
 class TestSynthesizeChunks:

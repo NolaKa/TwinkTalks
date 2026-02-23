@@ -25,7 +25,7 @@ twinktalks/
 
 ## Key Technical Decisions
 
-- **Model**: `Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice` (preset voices, no cloning needed). Base model requires reference audio.
+- **Model**: `Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice` (preset voices, no cloning needed). Base model requires reference audio. `MODELSCOPE_ID` mirrors HF model ID for fallback downloads.
 - **Apple Silicon**: `device_map="mps"`, `attn_implementation="sdpa"`, `dtype=float16`. FlashAttention does NOT work on macOS.
 - **PDF extraction**: pdfplumber with `layout=True` handles multi-column papers. Falls back to PyMuPDF. Table skipping via `find_tables()` bbox exclusion. `extract_text_by_page()` returns `list[tuple[int, str]]` for page-aware processing.
 - **EPUB extraction**: ebooklib parses EPUB container, BeautifulSoup extracts text from HTML spine items. Chapters map to spine indices (reuses `Chapter` dataclass from `toc.py`). `extract_text_by_item()` returns per-spine-item text.
@@ -39,6 +39,7 @@ twinktalks/
 - **Chapter markers**: `AudioChapter(title, start_ms, end_ms)` dataclass. `add_chapter_markers()` writes ID3v2 CHAP + CTOC frames via mutagen. `compute_chunk_offsets()` calculates per-chunk timing including silence gaps. `_map_chunks_to_chapters()` maps `chunk.source_page` to TOC page ranges.
 - **Batch**: `--chapters all` loops over `extract_toc()`, calls `_process_single()` per chapter. Each chapter gets its own session.
 - **Sessions**: `~/.twinktalks/sessions/<id>/` stores `session.json` + `chunk_NNNN.wav` files. `synthesize_chunks()` returns 3-tuple `(waveform, sample_rate, chunk_offsets_ms)` and accepts `session_dir` and `start_from` for resume.
+- **Model loading**: `TTSEngine(model_path=...)` accepts local dir. `load_model()` tries: 1) local path, 2) HuggingFace, 3) ModelScope fallback on 429/401/403. CLI: `--model-path`. Web UI: `TWINKTALKS_MODEL_PATH` env var.
 - **Gradio 6.0**: `css` param goes in `launch()`, not `Blocks()`.
 
 ## Running
@@ -59,6 +60,10 @@ python -m twinktalks textbook.pdf --chapters all
 
 # MP3 with chapter markers
 python -m twinktalks textbook.pdf --chapter-markers -o output.mp3
+
+# Local model (no HuggingFace account needed)
+python -m twinktalks --model-path ./model paper.pdf
+TWINKTALKS_MODEL_PATH=./model python -m twinktalks.web
 
 # Web UI
 python -m twinktalks.web                         # http://localhost:7860

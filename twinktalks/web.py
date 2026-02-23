@@ -435,9 +435,11 @@ footer { display: none !important; }
 def _get_engine(speaker: str):
     global _engine
     from twinktalks.tts_engine import TTSEngine
+    import os
 
+    model_path = os.environ.get("TWINKTALKS_MODEL_PATH")
     if _engine is None or _engine.speaker != speaker:
-        _engine = TTSEngine(speaker=speaker)
+        _engine = TTSEngine(speaker=speaker, model_path=model_path)
     return _engine
 
 

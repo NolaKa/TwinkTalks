@@ -207,18 +207,30 @@ Uses [Qwen3-TTS-12Hz-1.7B-CustomVoice](https://huggingface.co/Qwen/Qwen3-TTS-12H
 - `attn_implementation="sdpa"` (FlashAttention unavailable on macOS)
 - `dtype=float16`
 
-The model (~3.5GB) downloads automatically on first run.
+The model (~3.5GB) downloads automatically on first run. **No HuggingFace account is required** — the model is public. If you hit rate limits, TwinkTalks will automatically try [ModelScope](https://modelscope.cn/models/Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice) as a fallback.
 
-### Slow download?
+### Download options
 
-The default download can be slow. For faster speeds, pre-download the model manually:
+**Automatic (default):** Just run TwinkTalks. It downloads from HuggingFace, falling back to ModelScope on errors.
 
+**Manual — no account needed (ModelScope):**
 ```bash
-pip install -U "huggingface_hub[cli]" hf_transfer
-HF_HUB_ENABLE_HF_TRANSFER=1 huggingface-cli download Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice
+pip install modelscope
+modelscope download --model Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice --local_dir ./model
+python -m twinktalks --model-path ./model paper.pdf
 ```
 
-`hf_transfer` uses multi-threaded downloads and is significantly faster than the default.
+**Manual — fast download (HuggingFace, free account):**
+```bash
+pip install -U "huggingface_hub[cli]" hf_transfer
+HF_HUB_ENABLE_HF_TRANSFER=1 huggingface-cli download Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice --local-dir ./model
+python -m twinktalks --model-path ./model paper.pdf
+```
+
+**Web UI with local model:**
+```bash
+TWINKTALKS_MODEL_PATH=./model python -m twinktalks.web
+```
 
 ### Expected warnings on macOS
 

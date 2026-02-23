@@ -153,6 +153,12 @@ def create_parser() -> argparse.ArgumentParser:
         help="Embed chapter markers in MP3 output (requires TOC and .mp3 output)",
     )
     parser.add_argument(
+        "--model-path",
+        type=str,
+        default=None,
+        help="Path to a local model directory (skip HuggingFace download)",
+    )
+    parser.add_argument(
         "--dry-run",
         action="store_true",
         help="Extract and preprocess text only, print to stdout (no TTS)",
@@ -229,7 +235,7 @@ def _process_single(
     from twinktalks.tts_engine import TTSEngine
     from twinktalks.session import SessionManager
 
-    engine = TTSEngine(speaker=args.speaker)
+    engine = TTSEngine(speaker=args.speaker, model_path=getattr(args, "model_path", None))
     mgr = SessionManager()
 
     start_from = 0
