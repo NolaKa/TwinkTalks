@@ -238,8 +238,6 @@ input[type="checkbox"]:checked::after {
 
 /* Accordion */
 .gr-accordion {
-    border: 1px solid var(--border) !important;
-    border-radius: 0 !important;
     background: var(--bg) !important;
 }
 .gr-accordion summary, .gr-accordion button {
@@ -279,20 +277,52 @@ input[type="checkbox"]:checked::after {
     gap: 0.5rem !important;
 }
 
-/* Page range inputs */
+/* Page range — clean inline: PAGES [1] — [1] */
 .page-range {
-    gap: 0.5rem !important;
-    margin-top: 0.3rem !important;
+    gap: 0 !important;
+    align-items: flex-end !important;
+    background: none !important;
+}
+.page-range > div {
+    background: none !important;
+    padding: 0 !important;
+}
+.page-input {
+    max-width: 5.5rem !important;
+    flex: 0 0 auto !important;
+    background: none !important;
+    padding: 0 0.3rem 0 0 !important;
 }
 .page-input input[type="number"] {
     background: var(--bg) !important;
     border: 1px solid var(--border) !important;
-    border-radius: 0 !important;
     color: var(--amber) !important;
     font-family: var(--mono) !important;
-    font-size: 0.9rem !important;
+    font-size: 0.85rem !important;
     text-align: center !important;
-    width: 5rem !important;
+    width: 3.5rem !important;
+    padding: 0.3rem !important;
+}
+.page-input input[type="number"]:focus {
+    border-color: var(--amber) !important;
+}
+
+/* Format radio — single line: FORMAT  [wav]  [mp3] */
+.format-inline {
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: center !important;
+    gap: 0.8rem !important;
+}
+.format-inline > label,
+.format-inline > span[data-testid="block-label"] {
+    margin: 0 !important;
+    flex-shrink: 0 !important;
+}
+.format-inline > div {
+    display: flex !important;
+    flex-direction: row !important;
+    gap: 0.5rem !important;
 }
 
 /* Radio — square terminal style */
@@ -439,6 +469,29 @@ div[class*="block"].hide-container {
     box-shadow: none !important;
 }
 
+/* Compact vertical spacing inside panels */
+.panel-left > div, .panel-right > div {
+    margin-bottom: 0.15rem !important;
+}
+
+/* Explicit borders only where needed */
+.upload-zone {
+    border: 1px solid var(--border) !important;
+}
+.status-bar textarea {
+    border: 1px solid var(--border) !important;
+    border-left: 2px solid var(--amber) !important;
+}
+.audio-output {
+    border: 1px solid var(--border) !important;
+}
+.gr-accordion {
+    border: 1px solid var(--border) !important;
+}
+.gr-files {
+    border: 1px solid var(--border) !important;
+}
+
 /* Footer kill */
 footer { display: none !important; }
 """
@@ -465,10 +518,13 @@ def _get_page_range(start, end, total) -> tuple[int, int] | None:
 
 
 def on_files_upload(files):
-    """Called when file(s) are uploaded. Handles single and multi-file modes."""
+    """Called when file(s) are uploaded. Handles single and multi-file modes.
+
+    Returns: (page_range_row, page_start, page_end, page_info, chapter_dropdown, status)
+    """
     if files is None or len(files) == 0:
         return (
-            gr.update(visible=False), gr.update(visible=False), "",
+            gr.update(visible=False), gr.update(), gr.update(), "",
             gr.update(visible=False, choices=[], value=None),
             "// READY",
         )
@@ -478,9 +534,7 @@ def on_files_upload(files):
         from pathlib import Path
         names = [Path(f.name).name for f in files]
         return (
-            gr.update(visible=False),
-            gr.update(visible=False),
-            "",
+            gr.update(visible=False), gr.update(), gr.update(), "",
             gr.update(visible=False, choices=[], value=None),
             f"// QUEUE — {len(files)} files: {', '.join(names)}",
         )
@@ -506,8 +560,9 @@ def on_files_upload(files):
         show_toc = len(toc_choices) > 1
 
         return (
-            gr.update(visible=True, value=1, maximum=total),
-            gr.update(visible=True, value=total, maximum=total),
+            gr.update(visible=True),
+            gr.update(value=1, maximum=total),
+            gr.update(value=total, maximum=total),
             f"{total}",
             gr.update(visible=show_toc, choices=toc_choices, value="All pages"),
             f"// LOADED — {total} pages" + (f", {len(toc_choices) - 1} chapters" if show_toc else ""),
@@ -515,7 +570,7 @@ def on_files_upload(files):
     except Exception as e:
         logger.exception("File upload failed: %s", e)
         return (
-            gr.update(visible=False), gr.update(visible=False), "",
+            gr.update(visible=False), gr.update(), gr.update(), "",
             gr.update(visible=False, choices=[], value=None),
             f"// ERROR — {e}",
         )
@@ -752,15 +807,15 @@ def create_app() -> gr.Blocks:
                     elem_classes=["upload-zone"],
                 )
 
-                # Page range (hidden until file loaded)
-                with gr.Row(elem_classes=["page-range"]):
+                # Page range — compact inline
+                with gr.Row(visible=False, elem_classes=["page-range"]) as page_range_row:
                     page_start = gr.Number(
-                        value=1, label="FROM PAGE", minimum=1, precision=0,
-                        visible=False, elem_classes=["page-input"],
+                        value=1, label="PAGES", minimum=1, precision=0,
+                        elem_classes=["page-input"],
                     )
                     page_end = gr.Number(
-                        value=1, label="TO PAGE", minimum=1, precision=0,
-                        visible=False, elem_classes=["page-input"],
+                        value=1, label="\u2014", minimum=1, precision=0,
+                        elem_classes=["page-input"],
                     )
                 page_info = gr.State("")
 
@@ -794,6 +849,7 @@ def create_app() -> gr.Blocks:
 
                 output_format = gr.Radio(
                     choices=["wav", "mp3"], value="wav", label="FORMAT",
+                    elem_classes=["format-inline"],
                 )
 
 
@@ -850,7 +906,7 @@ def create_app() -> gr.Blocks:
         # === Events ===
         pdf_input.change(
             fn=on_files_upload, inputs=[pdf_input],
-            outputs=[page_start, page_end, page_info, chapter_dropdown, status],
+            outputs=[page_range_row, page_start, page_end, page_info, chapter_dropdown, status],
         )
         chapter_dropdown.change(
             fn=on_chapter_select, inputs=[chapter_dropdown, pdf_input],
@@ -921,8 +977,8 @@ def _make_theme():
         body_background_fill_dark="#0a0a0a",
         block_background_fill="#0a0a0a",
         block_background_fill_dark="#0a0a0a",
-        block_border_color="#2a2000",
-        block_border_color_dark="#2a2000",
+        block_border_color="transparent",
+        block_border_color_dark="transparent",
         block_label_text_color="#7a5a10",
         block_label_text_color_dark="#7a5a10",
         block_title_text_color="#d4a017",
