@@ -54,9 +54,11 @@ CUSTOM_CSS = """
 body, .gradio-container {
     background: var(--bg) !important;
     font-family: var(--mono) !important;
+    width: 100% !important;
     max-width: 1100px !important;
     margin: 0 auto !important;
     color: var(--text) !important;
+    overflow-x: hidden !important;
 }
 
 /* Scanline overlay */
@@ -125,6 +127,8 @@ label, .gr-input-label, span[data-testid="block-label"] {
     padding: 1.2rem 1rem !important;
     transition: border-color 0.15s !important;
     min-height: 120px !important;
+    max-width: 100% !important;
+    overflow: hidden !important;
 }
 .upload-zone:hover {
     border-color: var(--amber) !important;
@@ -388,16 +392,24 @@ input[type="number"]::-webkit-inner-spin-button { opacity: 0.5 !important; }
     gap: 2rem !important;
     align-items: flex-start !important;
     flex-wrap: nowrap !important;
+    width: 100% !important;
 }
 .panel-left, .panel-right {
     background: none !important;
     border: none !important;
     padding: 0 !important;
     min-width: 0 !important;
-    width: calc(50% - 1rem) !important;
-    flex: 0 0 calc(50% - 1rem) !important;
+    width: 50% !important;
+    flex: 0 0 50% !important;
     max-width: calc(50% - 1rem) !important;
     overflow: hidden !important;
+    box-sizing: border-box !important;
+}
+/* All children inside panels must respect parent width */
+.panel-left > *, .panel-right > *,
+.panel-left > * > *, .panel-right > * > * {
+    max-width: 100% !important;
+    box-sizing: border-box !important;
 }
 .panel-label {
     background: none !important;
@@ -456,7 +468,7 @@ def on_files_upload(files):
     """Called when file(s) are uploaded. Handles single and multi-file modes."""
     if files is None or len(files) == 0:
         return (
-            gr.update(visible=False), gr.update(visible=False), gr.update(visible=False),
+            gr.update(visible=False), gr.update(visible=False), "",
             gr.update(visible=False, choices=[], value=None),
             "// READY",
         )
@@ -468,7 +480,7 @@ def on_files_upload(files):
         return (
             gr.update(visible=False),
             gr.update(visible=False),
-            gr.update(visible=False),
+            "",
             gr.update(visible=False, choices=[], value=None),
             f"// QUEUE — {len(files)} files: {', '.join(names)}",
         )
@@ -496,14 +508,14 @@ def on_files_upload(files):
         return (
             gr.update(visible=True, value=1, maximum=total),
             gr.update(visible=True, value=total, maximum=total),
-            gr.update(visible=True, value=f"{total}"),
+            f"{total}",
             gr.update(visible=show_toc, choices=toc_choices, value="All pages"),
             f"// LOADED — {total} pages" + (f", {len(toc_choices) - 1} chapters" if show_toc else ""),
         )
     except Exception as e:
         logger.exception("File upload failed: %s", e)
         return (
-            gr.update(visible=False), gr.update(visible=False), gr.update(visible=False),
+            gr.update(visible=False), gr.update(visible=False), "",
             gr.update(visible=False, choices=[], value=None),
             f"// ERROR — {e}",
         )
@@ -750,7 +762,7 @@ def create_app() -> gr.Blocks:
                         value=1, label="TO PAGE", minimum=1, precision=0,
                         visible=False, elem_classes=["page-input"],
                     )
-                    page_info = gr.Textbox(value="", visible=False)
+                page_info = gr.State("")
 
                 chapter_dropdown = gr.Dropdown(
                     choices=["All pages"], value="All pages",
