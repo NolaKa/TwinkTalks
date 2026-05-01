@@ -236,12 +236,6 @@ export function App() {
               onToggleAdvanced={() => setAdvancedOpen(o => !o)}
             />
 
-            <GenerateButton
-              onClick={handleGenerate}
-              disabled={!file || busy}
-              label={busy ? 'Working…' : 'Generate audio'}
-            />
-
             {error && (
               <div
                 style={{
@@ -257,6 +251,17 @@ export function App() {
             )}
 
             <audio ref={audioRef} controls style={{ width: '100%' }} />
+
+            {/* Sticky-bottom Generate: floats 24px above the viewport bottom
+                while there's still content to scroll past, then settles into
+                its natural position once the bottom of the form is reached. */}
+            <div style={{ position: 'sticky', bottom: 24, zIndex: 5 }}>
+              <GenerateButton
+                onClick={handleGenerate}
+                disabled={!file || busy}
+                label={busy ? 'Working…' : 'Generate audio'}
+              />
+            </div>
           </div>
 
           <aside>

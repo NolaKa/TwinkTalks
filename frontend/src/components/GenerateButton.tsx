@@ -17,12 +17,16 @@ export function GenerateButton({ onClick, disabled, label = 'Generate audio' }: 
         padding: '14px',
         fontSize: 14,
         fontWeight: 500,
+        width: '100%',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
         gap: 10,
         cursor: disabled ? 'not-allowed' : 'pointer',
-        transition: 'background 150ms ease',
+        transition: 'background 150ms ease, box-shadow 150ms ease',
+        boxShadow: disabled
+          ? 'none'
+          : '0 4px 14px color-mix(in srgb, var(--ink) 18%, transparent)',
       }}
     >
       {label}
