@@ -35,6 +35,8 @@ def extract_text(
     max_pages: int | None = None,
     page_range: tuple[int, int] | None = None,
     skip_tables: bool = False,
+    ocr: bool = False,
+    ocr_language: str = "eng",
 ) -> str:
     """Extract text from a PDF file.
 
@@ -45,6 +47,8 @@ def extract_text(
         page_range: Optional (start, end) tuple, 1-indexed inclusive.
                     Overrides max_pages if provided.
         skip_tables: If True, exclude text inside detected tables.
+        ocr: Run ocrmypdf on the file before extraction (for scanned PDFs).
+        ocr_language: Tesseract language code, e.g. "eng" or "eng+pol".
     """
     path = Path(pdf_path)
     if not path.exists():
@@ -52,21 +56,31 @@ def extract_text(
     if path.suffix.lower() != ".pdf":
         raise ValueError(f"Not a PDF file: {pdf_path}")
 
-    text = _extract_with_pdfplumber(path, max_pages, page_range, skip_tables)
+    ocr_temp_path: str | None = None
+    if ocr:
+        from twinktalks.ocr import ocr_preprocess
+        ocr_temp_path = ocr_preprocess(str(path), language=ocr_language)
+        path = Path(ocr_temp_path)
 
-    if not text or len(text.strip()) < 50:
-        text = _extract_with_pymupdf(path, max_pages, page_range)
+    try:
+        text = _extract_with_pdfplumber(path, max_pages, page_range, skip_tables)
 
-    if not text or len(text.strip()) < 50:
-        raise ExtractionError(
-            "No text extracted. The PDF may be image-based (scanned). "
-            "OCR is not currently supported."
-        )
+        if not text or len(text.strip()) < 50:
+            text = _extract_with_pymupdf(path, max_pages, page_range)
 
-    if skip_references:
-        text = _truncate_at_references(text)
+        if not text or len(text.strip()) < 50:
+            hint = "" if ocr else " Try re-running with --ocr to OCR scanned pages."
+            raise ExtractionError(
+                f"No text extracted. The PDF may be image-based (scanned).{hint}"
+            )
 
-    return text
+        if skip_references:
+            text = _truncate_at_references(text)
+
+        return text
+    finally:
+        if ocr_temp_path:
+            Path(ocr_temp_path).unlink(missing_ok=True)
 
 
 def _select_pages(all_pages: list, max_pages: int | None, page_range: tuple[int, int] | None) -> list:
@@ -179,6 +193,8 @@ def extract_text_by_page(
     max_pages: int | None = None,
     page_range: tuple[int, int] | None = None,
     skip_tables: bool = False,
+    ocr: bool = False,
+    ocr_language: str = "eng",
 ) -> list[tuple[int, str]]:
     """Extract text from a PDF, returning per-page results.
 
@@ -188,6 +204,12 @@ def extract_text_by_page(
     path = Path(pdf_path)
     if not path.exists():
         raise FileNotFoundError(f"PDF not found: {pdf_path}")
+
+    ocr_temp_path: str | None = None
+    if ocr:
+        from twinktalks.ocr import ocr_preprocess
+        ocr_temp_path = ocr_preprocess(str(path), language=ocr_language)
+        path = Path(ocr_temp_path)
 
     page_texts: list[tuple[int, str]] = []
     try:
@@ -217,6 +239,9 @@ def extract_text_by_page(
                         page_texts.append((page_num, text))
     except Exception as e:
         logger.warning("pdfplumber per-page extraction failed for %s: %s", path.name, e)
+    finally:
+        if ocr_temp_path:
+            Path(ocr_temp_path).unlink(missing_ok=True)
 
     return page_texts
 

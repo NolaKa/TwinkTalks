@@ -4,7 +4,11 @@ from pathlib import Path
 
 from twinktalks.toc import Chapter
 
-SUPPORTED_EXTENSIONS = {".pdf", ".epub"}
+SUPPORTED_EXTENSIONS = {".pdf", ".epub", ".md", ".txt", ".html", ".htm"}
+
+# Plain-text formats: PDF-specific kwargs are dropped silently.
+_PLAIN_TEXT_EXTS = {".md", ".txt"}
+_HTML_EXTS = {".html", ".htm"}
 
 
 def detect_file_type(file_path: str) -> str:
@@ -17,21 +21,36 @@ def detect_file_type(file_path: str) -> str:
     return ext
 
 
+def _strip_pdf_kwargs(kwargs: dict) -> dict:
+    """Remove PDF-only options that don't apply to other formats."""
+    for key in ("page_range", "max_pages", "skip_tables", "chapter_range",
+                "ocr", "ocr_language"):
+        kwargs.pop(key, None)
+    return kwargs
+
+
 def extract_text(file_path: str, **kwargs) -> str:
     """Extract text from a file, routing to the appropriate extractor."""
     ext = detect_file_type(file_path)
     if ext == ".pdf":
         from twinktalks.pdf_extractor import extract_text as pdf_extract
         return pdf_extract(file_path, **kwargs)
-    elif ext == ".epub":
+    if ext == ".epub":
         from twinktalks.epub_extractor import extract_text as epub_extract
-        # Map page_range to chapter_range for EPUB
         if "page_range" in kwargs:
             kwargs["chapter_range"] = kwargs.pop("page_range")
-        # Remove PDF-specific kwargs that EPUB doesn't support
         kwargs.pop("max_pages", None)
         kwargs.pop("skip_tables", None)
+        kwargs.pop("ocr", None)
+        kwargs.pop("ocr_language", None)
         return epub_extract(file_path, **kwargs)
+    if ext in _PLAIN_TEXT_EXTS:
+        from twinktalks.text_extractor import extract_text as text_extract
+        return text_extract(file_path, **_strip_pdf_kwargs(kwargs))
+    if ext in _HTML_EXTS:
+        from twinktalks.html_extractor import extract_text as html_extract
+        return html_extract(file_path, **_strip_pdf_kwargs(kwargs))
+    return ""
 
 
 def extract_text_by_page(file_path: str, **kwargs) -> list[tuple[int, str]]:
@@ -40,25 +59,36 @@ def extract_text_by_page(file_path: str, **kwargs) -> list[tuple[int, str]]:
     if ext == ".pdf":
         from twinktalks.pdf_extractor import extract_text_by_page as pdf_by_page
         return pdf_by_page(file_path, **kwargs)
-    elif ext == ".epub":
+    if ext == ".epub":
         from twinktalks.epub_extractor import extract_text_by_item as epub_by_item
         if "page_range" in kwargs:
             kwargs["chapter_range"] = kwargs.pop("page_range")
         kwargs.pop("max_pages", None)
         kwargs.pop("skip_tables", None)
+        kwargs.pop("ocr", None)
+        kwargs.pop("ocr_language", None)
         return epub_by_item(file_path, **kwargs)
+    if ext in _PLAIN_TEXT_EXTS:
+        from twinktalks.text_extractor import extract_text_by_page as text_by_page
+        return text_by_page(file_path, **_strip_pdf_kwargs(kwargs))
+    if ext in _HTML_EXTS:
+        from twinktalks.html_extractor import extract_text_by_page as html_by_page
+        return html_by_page(file_path, **_strip_pdf_kwargs(kwargs))
     return []
 
 
 def get_item_count(file_path: str) -> int:
-    """Return page count (PDF) or chapter count (EPUB)."""
+    """Return page count (PDF), chapter count (EPUB), or 1 for flat-text formats."""
     ext = detect_file_type(file_path)
     if ext == ".pdf":
         from twinktalks.pdf_extractor import get_page_count
         return get_page_count(file_path)
-    elif ext == ".epub":
+    if ext == ".epub":
         from twinktalks.epub_extractor import get_chapter_count
         return get_chapter_count(file_path)
+    if ext in _PLAIN_TEXT_EXTS or ext in _HTML_EXTS:
+        return 1
+    return 1
 
 
 def extract_toc(file_path: str) -> list[Chapter]:
@@ -67,7 +97,13 @@ def extract_toc(file_path: str) -> list[Chapter]:
     if ext == ".pdf":
         from twinktalks.toc import extract_toc as pdf_toc
         return pdf_toc(file_path)
-    elif ext == ".epub":
+    if ext == ".epub":
         from twinktalks.epub_extractor import extract_toc as epub_toc
         return epub_toc(file_path)
+    if ext in _PLAIN_TEXT_EXTS:
+        from twinktalks.text_extractor import extract_toc as text_toc
+        return text_toc(file_path)
+    if ext in _HTML_EXTS:
+        from twinktalks.html_extractor import extract_toc as html_toc
+        return html_toc(file_path)
     return []
