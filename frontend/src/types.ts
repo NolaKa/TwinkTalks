@@ -1,5 +1,3 @@
-export type Theme = 'light' | 'dark' | 'auto'
-
 export type Voice = {
   id: string
   name: string

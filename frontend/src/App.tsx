@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { api } from './api/client'
 import { ActiveJob } from './components/ActiveJob'
 import { Dropzone } from './components/Dropzone'
@@ -11,7 +11,7 @@ import { Topbar } from './components/Topbar'
 import { VoicePicker } from './components/VoicePicker'
 import { useTheme } from './hooks/useTheme'
 import type {
-  ActiveJobInfo, FileMetadata, Language, LibraryEntry, Settings, Voice,
+  ActiveJobInfo, FileMetadata, Language, LibraryEntry, Preset, Settings, Voice,
 } from './types'
 
 const DEFAULT_SETTINGS: Settings = {
@@ -33,10 +33,13 @@ export function App() {
 
   const [voices, setVoices] = useState<Voice[]>([])
   const [languages, setLanguages] = useState<Language[]>([])
+  const [presets, setPresets] = useState<{ builtin: Preset[]; user: Preset[] }>({ builtin: [], user: [] })
   const [library, setLibrary] = useState<LibraryEntry[]>([])
 
   const [file, setFile] = useState<FileMetadata | null>(null)
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS)
+  const [advancedOpen, setAdvancedOpen] = useState(false)
+  const [saveName, setSaveName] = useState('')
   const [activeJob, setActiveJob] = useState<ActiveJobInfo | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -47,10 +50,10 @@ export function App() {
   useEffect(() => {
     api.voices().then(setVoices).catch(e => setError(String(e)))
     api.languages().then(setLanguages).catch(() => {})
+    api.presets().then(setPresets).catch(() => {})
     api.library().then(setLibrary).catch(() => {})
   }, [])
 
-  // Tear down any open SSE on unmount
   useEffect(() => () => eventSourceRef.current?.close(), [])
 
   const handleUpload = useCallback(async (raw: File) => {
@@ -76,6 +79,44 @@ export function App() {
 
   const updateSettings = useCallback((patch: Partial<Settings>) => {
     setSettings(prev => ({ ...prev, ...patch }))
+  }, [])
+
+  const handleApplyPreset = useCallback((preset: Preset) => {
+    const matching = voices.find(v => v.speaker === preset.speaker)
+    setSettings(s => ({
+      ...s,
+      voice_id: matching?.id ?? s.voice_id,
+      speed: preset.speed,
+      instruct: preset.instruct,
+    }))
+  }, [voices])
+
+  const handleSavePreset = useCallback(async (name: string) => {
+    const v = voices.find(vv => vv.id === settings.voice_id)
+    if (!v) return
+    try {
+      await api.savePreset({
+        name,
+        speaker: v.speaker,
+        speed: settings.speed,
+        instruct: settings.instruct,
+      })
+      const fresh = await api.presets()
+      setPresets(fresh)
+      setSaveName('')
+    } catch (e) {
+      setError(String(e))
+    }
+  }, [voices, settings])
+
+  const handleDeletePreset = useCallback(async (name: string) => {
+    try {
+      await api.deletePreset(name)
+      const fresh = await api.presets()
+      setPresets(fresh)
+    } catch (e) {
+      setError(String(e))
+    }
   }, [])
 
   const handleGenerate = useCallback(async () => {
@@ -133,7 +174,7 @@ export function App() {
     }
   }, [file, settings, busy])
 
-  // Keyboard shortcuts
+  // ⌘⏎ shortcut
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const meta = e.metaKey || e.ctrlKey
@@ -146,19 +187,6 @@ export function App() {
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [file, busy, handleGenerate])
-
-  const languageDisplay = useMemo(() => {
-    const lang = languages.find(l => l.id === settings.language)
-    if (!lang) return settings.language
-    return lang.id === 'auto' ? `${file?.title ? 'Detected on generate' : 'Auto'}` : lang.name
-  }, [languages, settings.language, file])
-
-  const formatDisplay = useMemo(() => {
-    const fmt = settings.format
-    if (fmt === 'wav') return 'WAV · 24-bit · 24 kHz'
-    if (fmt === 'mp3') return 'MP3 · 192 kbps'
-    return 'M4B · audiobook'
-  }, [settings.format])
 
   const handlePlay = useCallback((entry: LibraryEntry) => {
     if (!audioRef.current) return
@@ -194,8 +222,15 @@ export function App() {
             <SettingsList
               settings={settings}
               onChange={updateSettings}
-              languageDisplay={languageDisplay}
-              formatDisplay={formatDisplay}
+              languages={languages}
+              presets={presets}
+              onApplyPreset={handleApplyPreset}
+              onSavePreset={handleSavePreset}
+              onDeletePreset={handleDeletePreset}
+              advancedOpen={advancedOpen}
+              onToggleAdvanced={() => setAdvancedOpen(o => !o)}
+              saveName={saveName}
+              onSaveNameChange={setSaveName}
             />
 
             <GenerateButton

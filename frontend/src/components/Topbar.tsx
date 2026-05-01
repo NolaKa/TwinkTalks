@@ -1,12 +1,7 @@
-import type { Theme } from '../types'
-
-const THEMES: ReadonlyArray<[Theme, string]> = [
-  ['light', '☀'],
-  ['auto', '◐'],
-  ['dark', '☾'],
-]
+import type { Theme } from '../hooks/useTheme'
 
 export function Topbar({ theme, setTheme }: { theme: Theme; setTheme: (t: Theme) => void }) {
+  const next: Theme = theme === 'dark' ? 'light' : 'dark'
   return (
     <header
       style={{
@@ -45,48 +40,25 @@ export function Topbar({ theme, setTheme }: { theme: Theme; setTheme: (t: Theme)
         <span style={{ color: 'var(--dim-2)', fontSize: 12 }}>/</span>
         <span style={{ color: 'var(--dim)', fontSize: 12 }}>New session</span>
       </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
-        {['Docs', 'Library'].map(l => (
-          <button
-            key={l}
-            style={{
-              padding: '5px 10px',
-              background: 'transparent',
-              border: 0,
-              color: 'var(--dim)',
-              borderRadius: 5,
-            }}
-          >
-            {l}
-          </button>
-        ))}
-        <div style={{ width: 1, height: 16, background: 'var(--line)', margin: '0 4px' }} />
-        <div
-          style={{
-            display: 'flex',
-            border: '1px solid var(--line)',
-            borderRadius: 6,
-            padding: 2,
-            fontSize: 11,
-          }}
-        >
-          {THEMES.map(([v, s]) => (
-            <button
-              key={v}
-              onClick={() => setTheme(v)}
-              style={{
-                padding: '3px 8px',
-                border: 0,
-                background: theme === v ? 'var(--bg-soft-2)' : 'transparent',
-                borderRadius: 4,
-                color: theme === v ? 'var(--ink)' : 'var(--dim)',
-              }}
-            >
-              {s}
-            </button>
-          ))}
-        </div>
-      </div>
+      <button
+        onClick={() => setTheme(next)}
+        title={`Switch to ${next} mode`}
+        style={{
+          width: 28,
+          height: 28,
+          display: 'grid',
+          placeItems: 'center',
+          border: '1px solid var(--line)',
+          borderRadius: 6,
+          background: 'transparent',
+          color: 'var(--dim)',
+          cursor: 'pointer',
+          fontSize: 13,
+          padding: 0,
+        }}
+      >
+        {theme === 'dark' ? '☀' : '☾'}
+      </button>
     </header>
   )
 }
