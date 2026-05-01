@@ -25,9 +25,15 @@ type Props = {
   file: FileMetadata
   onReplace: () => void
   onPick: (file: File) => void  // accept a fresh drop on the card itself
+  /** Speed slider value — duration estimate scales by 1/speed. Defaults to 1.0. */
+  speedFactor?: number
 }
 
-export function FileCard({ file, onReplace, onPick }: Props) {
+export function FileCard({ file, onReplace, onPick, speedFactor = 1 }: Props) {
+  const adjustedDuration =
+    file.est_duration_s > 0 && speedFactor > 0
+      ? file.est_duration_s / speedFactor
+      : file.est_duration_s
   const ext = (file.name.split('.').pop() || '').toUpperCase()
   const [drag, setDrag] = useState(false)
   return (
@@ -88,8 +94,8 @@ export function FileCard({ file, onReplace, onPick }: Props) {
           <span>{fmtBytes(file.size_bytes)}</span>
           {pluralUnit(file.item_count, file.ext) && <span>{pluralUnit(file.item_count, file.ext)}</span>}
           {file.word_count > 0 && <span>{file.word_count.toLocaleString()} words</span>}
-          {file.est_duration_s > 0 && (
-            <span style={{ color: 'var(--ink)' }}>{fmtDuration(file.est_duration_s)}</span>
+          {adjustedDuration > 0 && (
+            <span style={{ color: 'var(--ink)' }}>{fmtDuration(adjustedDuration)}</span>
           )}
         </div>
       </div>

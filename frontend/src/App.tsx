@@ -325,6 +325,7 @@ export function App() {
                   file={file}
                   onReplace={handleReplace}
                   onPick={handleUpload}
+                  speedFactor={settings.speed}
                 />
                 {file.needs_ocr && (
                   <ScannedNotice forced={settings.ocr && !file.needs_ocr} />

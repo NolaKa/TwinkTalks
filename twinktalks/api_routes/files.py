@@ -24,7 +24,24 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/files", tags=["files"])
 
 # Words per minute used for the duration estimate shown on the FileCard.
-_WPM = 150
+# Calibrated against real Qwen + Kokoro runs at speed=1.0 — we were previously
+# at 150 wpm and consistently underestimating by 20-50%. Real-world rate sits
+# closer to 115 wpm once you include enunciation, numbers, abbreviations.
+_WPM = 115
+# Each ~500-char chunk has a small inter-chunk silence (sentence-end or
+# paragraph-end). Average gap ≈ 0.6s. Adds ~1-2 minutes per long doc.
+_CHARS_PER_CHUNK = 500
+_SILENCE_PER_CHUNK_S = 0.6
+
+
+def _estimate_audio_seconds(text: str) -> int:
+    word_count = len(text.split())
+    if not word_count:
+        return 0
+    word_seconds = word_count / _WPM * 60
+    chunk_count = max(1, len(text) / _CHARS_PER_CHUNK)
+    gap_seconds = chunk_count * _SILENCE_PER_CHUNK_S
+    return int(round(word_seconds + gap_seconds))
 
 
 @dataclass
@@ -76,7 +93,7 @@ class FileMetadata(BaseModel):
     toc: list[ChapterOut] = []
 
 
-def _to_metadata(stored: StoredFile, word_count: int) -> FileMetadata:
+def _to_metadata(stored: StoredFile, word_count: int, est_duration_s: int = 0) -> FileMetadata:
     return FileMetadata(
         id=stored.id,
         name=stored.name,
@@ -84,7 +101,7 @@ def _to_metadata(stored: StoredFile, word_count: int) -> FileMetadata:
         size_bytes=stored.size_bytes,
         item_count=stored.item_count,
         word_count=word_count,
-        est_duration_s=int(round(word_count / _WPM * 60)) if word_count else 0,
+        est_duration_s=est_duration_s,
         title=stored.title,
         author=stored.author,
         has_cover=stored.cover_image is not None,
@@ -166,9 +183,11 @@ async def upload(file: UploadFile = File(...)) -> FileMetadata:
     # so the UI can flip it on automatically — the user shouldn't have to know
     # about Tesseract.
     word_count = 0
+    est_duration_s = 0
     try:
         text = _ensure_text(stored)
         word_count = len(text.split())
+        est_duration_s = _estimate_audio_seconds(text)
     except ExtractionError as e:
         msg = str(e).lower()
         if ext == ".pdf" and ("image-based" in msg or "scanned" in msg or "no text" in msg):
@@ -179,14 +198,14 @@ async def upload(file: UploadFile = File(...)) -> FileMetadata:
     except Exception as e:
         logger.warning("Initial extraction failed for %s: %s", target.name, e)
 
-    return _to_metadata(stored, word_count)
+    return _to_metadata(stored, word_count, est_duration_s)
 
 
 @router.get("/{file_id}", response_model=FileMetadata)
 def get_metadata(file_id: str) -> FileMetadata:
     stored = _get_or_404(file_id)
     text = stored._cached_text or ""
-    return _to_metadata(stored, len(text.split()))
+    return _to_metadata(stored, len(text.split()), _estimate_audio_seconds(text))
 
 
 class PreviewResponse(BaseModel):
