@@ -48,17 +48,23 @@ export function SettingsList(props: Props) {
         overflow: 'hidden',
       }}
     >
-      <Row label="Language" tip={TIPS.language}>
-        <select
-          value={settings.language}
-          onChange={e => onChange({ language: e.target.value })}
-          style={selectStyle}
-        >
-          {languages.map(l => (
-            <option key={l.id} value={l.id}>{l.name}</option>
-          ))}
-        </select>
-      </Row>
+      {/* Language is only worth showing when the active backend supports more
+          than one. Kokoro is English-only and returns just one entry, so we
+          hide the row instead of forcing the user to confirm "English" on
+          every run. */}
+      {languages.length > 1 && (
+        <Row label="Language" tip={TIPS.language}>
+          <select
+            value={settings.language}
+            onChange={e => onChange({ language: e.target.value })}
+            style={selectStyle}
+          >
+            {languages.map(l => (
+              <option key={l.id} value={l.id}>{l.name}</option>
+            ))}
+          </select>
+        </Row>
+      )}
 
       <Row label="Speed" tip={TIPS.speed}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 180 }}>

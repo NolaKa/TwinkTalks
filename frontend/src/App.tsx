@@ -72,8 +72,10 @@ export function App() {
     api.library().then(setLibrary).catch(() => {})
   }, [])
 
-  // When the backend's default voice changes (e.g. switching from Qwen to
-  // Kokoro), reset the chosen voice if the current one isn't in the new list.
+  // When the backend changes (e.g. switching from Qwen to Kokoro), reset
+  // settings whose values aren't valid in the new list — voice_id and
+  // language. Otherwise the user can carry "Polish" or "aiden" into a
+  // Kokoro session and be silently misrouted.
   useEffect(() => {
     if (voices.length === 0) return
     setSettings(prev => {
@@ -82,6 +84,15 @@ export function App() {
       return { ...prev, voice_id: voices[0].id }
     })
   }, [voices])
+
+  useEffect(() => {
+    if (languages.length === 0) return
+    setSettings(prev => {
+      const stillValid = languages.some(l => l.id === prev.language)
+      if (stillValid) return prev
+      return { ...prev, language: languages[0].id }
+    })
+  }, [languages])
 
   useEffect(() => () => eventSourceRef.current?.close(), [])
 
@@ -333,17 +344,23 @@ export function App() {
                 value={settings.voice_id}
                 onChange={id => updateSettings({ voice_id: id })}
               />
-              <VoiceStyleControls
-                presets={presets}
-                instruct={settings.instruct}
-                saveName={saveName}
-                supportsInstruct={activeBackend?.supports_instruct ?? true}
-                onInstructChange={v => updateSettings({ instruct: v })}
-                onSaveNameChange={setSaveName}
-                onApplyPreset={handleApplyPreset}
-                onSavePreset={handleSavePreset}
-                onDeletePreset={handleDeletePreset}
-              />
+              {/* Voice style + presets only mean something on a backend that
+                  accepts natural-language instruct prompts. Kokoro doesn't,
+                  and its voices wouldn't match the Qwen-keyed built-in
+                  presets either, so the whole block is hidden there. */}
+              {activeBackend?.supports_instruct && (
+                <VoiceStyleControls
+                  presets={presets}
+                  instruct={settings.instruct}
+                  saveName={saveName}
+                  supportsInstruct={true}
+                  onInstructChange={v => updateSettings({ instruct: v })}
+                  onSaveNameChange={setSaveName}
+                  onApplyPreset={handleApplyPreset}
+                  onSavePreset={handleSavePreset}
+                  onDeletePreset={handleDeletePreset}
+                />
+              )}
             </div>
 
             <SettingsList
