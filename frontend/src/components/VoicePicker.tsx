@@ -9,18 +9,6 @@ type Props = {
 
 const VISIBLE_LIMIT = 6
 
-const LANGUAGE_FLAGS: Record<string, string> = {
-  'American English': '🇺🇸',
-  'British English':  '🇬🇧',
-  'Spanish':          '🇪🇸',
-  'French':           '🇫🇷',
-  'Hindi':            '🇮🇳',
-  'Italian':          '🇮🇹',
-  'Japanese':         '🇯🇵',
-  'Portuguese':       '🇧🇷',
-  'Mandarin':         '🇨🇳',
-}
-
 const GENDER_SYMBOL: Record<string, string> = {
   'Female': '♀',
   'Male':   '♂',
@@ -129,12 +117,7 @@ function VoiceTile({
   active,
   onClick,
 }: { voice: Voice; active: boolean; onClick: () => void }) {
-  const flag = v.language ? LANGUAGE_FLAGS[v.language] : ''
   const gender = v.gender ? GENDER_SYMBOL[v.gender] : ''
-
-  // The badge shown bottom-right of the avatar: language flag if known, else
-  // the gender symbol, else nothing (keeps Qwen tiles uncluttered).
-  const badge = flag || gender || ''
 
   return (
     <button
@@ -162,40 +145,21 @@ function VoiceTile({
         fontFamily: 'inherit',
       }}
     >
-      <div style={{ position: 'relative', flexShrink: 0 }}>
-        <div
-          style={{
-            width: 32,
-            height: 32,
-            borderRadius: '50%',
-            background: v.avatarColor,
-            display: 'grid',
-            placeItems: 'center',
-            fontSize: 12,
-            fontWeight: 600,
-            color: '#5a3a2a',
-          }}
-        >
-          {v.name[0]}
-        </div>
-        {badge && (
-          <span
-            style={{
-              position: 'absolute',
-              bottom: -2,
-              right: -4,
-              fontSize: 11,
-              lineHeight: 1,
-              background: 'var(--bg)',
-              border: '1px solid var(--line)',
-              borderRadius: 999,
-              padding: '1px 3px',
-              boxSizing: 'content-box',
-            }}
-          >
-            {badge}
-          </span>
-        )}
+      <div
+        style={{
+          width: 32,
+          height: 32,
+          borderRadius: '50%',
+          background: v.avatarColor,
+          display: 'grid',
+          placeItems: 'center',
+          fontSize: 12,
+          fontWeight: 600,
+          color: '#5a3a2a',
+          flexShrink: 0,
+        }}
+      >
+        {v.name[0]}
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{
