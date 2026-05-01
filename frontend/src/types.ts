@@ -13,6 +13,18 @@ export type Voice = {
   avatarColor: string
 }
 
+export type BackendInfo = {
+  name: 'qwen' | 'kokoro'
+  available: boolean
+  is_current: boolean
+  is_cached: boolean
+  voices: string[]
+  default_voice: string
+  languages: string[]
+  default_language: string
+  supports_instruct: boolean
+}
+
 export type Language = { id: string; name: string }
 
 export type Format = 'wav' | 'mp3' | 'm4b'

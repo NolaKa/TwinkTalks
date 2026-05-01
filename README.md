@@ -38,12 +38,36 @@ Convert academic papers, textbooks, e-books, notes, and web pages into natural-s
 
 ## Requirements
 
-- **Apple Silicon Mac** (M1/M2/M3/M4) with **32GB+ unified memory** recommended
+- **Apple Silicon Mac** (M1/M2/M3/M4)
+  - **32 GB+ RAM** recommended for the Qwen backend
+  - 8 GB RAM is fine for the Kokoro backend
 - Auto-detected device: MPS (Apple Silicon) → CUDA (NVIDIA) → CPU fallback
 - Python 3.12+
 - Node.js 20+ (only for the web UI build)
 - System deps: `portaudio`, `ffmpeg`, `sox` (installed via Homebrew)
 - Optional for OCR: `tesseract`, `ghostscript`, `qpdf` (also via Homebrew) plus `pip install ocrmypdf`
+
+## TTS backends
+
+TwinkTalks ships two interchangeable backends. You pick at install time —
+the Python deps are mutually exclusive in a single venv:
+
+| | **Qwen3-TTS-1.7B** (default) | **Kokoro-82M** |
+|---|---|---|
+| Install | `pip install -e .` | `pip install -e .[kokoro]` |
+| Model size | ~3.5 GB | ~360 MB |
+| RAM | ~6–10 GB | ~1.5–2 GB |
+| Speed (M-series) | RTF ~0.5–1× | RTF ~0.05–0.1× (~10× faster) |
+| Languages | 10+ (auto-detect) | English only (American + British) |
+| Voice-style instruct | yes (natural-language prompts) | no |
+| Voices in UI | 9 (aiden, dylan, eric, ono_anna, ryan, serena, sohee, uncle_fu, vivian) | 9 of Kokoro's 50+ (af_heart, af_bella, am_adam, bm_george, …) |
+
+If you want both, use separate virtualenvs — `mlx-audio` upgrades transformers
+to 5.x which `qwen-tts` pins below. Pick a backend per session.
+
+The web UI auto-detects which backend's deps are installed and shows its
+voice list. Use `TWINKTALKS_BACKEND=qwen` / `kokoro` to override the choice
+when you have one of each in different venvs.
 
 ## Quick Start
 

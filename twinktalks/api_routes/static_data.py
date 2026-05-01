@@ -1,11 +1,11 @@
-"""Static reference data for the UI: voices, languages, formats, presets."""
+"""Static reference data for the UI: backends, voices, languages, formats, presets."""
 
 from dataclasses import asdict
-from typing import Literal
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
+from twinktalks.backends import default_backend_name, detect_available, get_backend
 from twinktalks.presets import (
     BUILTIN_PRESETS,
     VoicePreset,
@@ -17,56 +17,116 @@ from twinktalks.presets import (
 router = APIRouter(tags=["static"])
 
 
-# All nine Qwen3-TTS-CustomVoice speakers, surfaced verbatim. id == speaker so
-# the UI and the model talk about the same identifier — no translation table,
-# no "supported speakers" mismatch like the one that bit the early build.
-# Display names are the raw IDs cleaned up for capitalization (underscores to
-# spaces, title-cased). Avatar tags are best-effort character hints; users
-# should preview-and-pick rather than rely on the labels.
-_VOICES = [
-    {"id": "aiden",    "name": "Aiden",    "speaker": "aiden",    "tag": "Warm",      "avatarColor": "#e5b8a3"},
-    {"id": "dylan",    "name": "Dylan",    "speaker": "dylan",    "tag": "Deep",      "avatarColor": "#a3b3d4"},
-    {"id": "eric",     "name": "Eric",     "speaker": "eric",     "tag": "Bright",    "avatarColor": "#f4d8b3"},
-    {"id": "ono_anna", "name": "Anna",     "speaker": "ono_anna", "tag": "Calm",      "avatarColor": "#b3d4c5"},
-    {"id": "ryan",     "name": "Ryan",     "speaker": "ryan",     "tag": "Narrator",  "avatarColor": "#c8b3d4"},
-    {"id": "serena",   "name": "Serena",   "speaker": "serena",   "tag": "Gentle",    "avatarColor": "#d4e3c5"},
-    {"id": "sohee",    "name": "Sohee",    "speaker": "sohee",    "tag": "Whisper",   "avatarColor": "#e0d4a3"},
-    {"id": "uncle_fu", "name": "Uncle Fu", "speaker": "uncle_fu", "tag": "Mature",    "avatarColor": "#c5d4f0"},
-    {"id": "vivian",   "name": "Vivian",   "speaker": "vivian",   "tag": "Lively",    "avatarColor": "#f0c6e0"},
-]
+# Display metadata layered onto each backend's raw voice IDs. id == speaker —
+# the model receives exactly what the UI shows, so there's no translation
+# table that can drift.
+_VOICE_META: dict[str, dict] = {
+    # Qwen
+    "aiden":    {"name": "Aiden",    "tag": "Warm",      "avatarColor": "#e5b8a3"},
+    "dylan":    {"name": "Dylan",    "tag": "Deep",      "avatarColor": "#a3b3d4"},
+    "eric":     {"name": "Eric",     "tag": "Bright",    "avatarColor": "#f4d8b3"},
+    "ono_anna": {"name": "Anna",     "tag": "Calm",      "avatarColor": "#b3d4c5"},
+    "ryan":     {"name": "Ryan",     "tag": "Narrator",  "avatarColor": "#c8b3d4"},
+    "serena":   {"name": "Serena",   "tag": "Gentle",    "avatarColor": "#d4e3c5"},
+    "sohee":    {"name": "Sohee",    "tag": "Whisper",   "avatarColor": "#e0d4a3"},
+    "uncle_fu": {"name": "Uncle Fu", "tag": "Mature",    "avatarColor": "#c5d4f0"},
+    "vivian":   {"name": "Vivian",   "tag": "Lively",    "avatarColor": "#f0c6e0"},
+    # Kokoro — voice id encodes (a)merican/(b)ritish + (f)emale/(m)ale.
+    "af_heart":   {"name": "Heart",   "tag": "AmFemale", "avatarColor": "#fbcfe8"},
+    "af_bella":   {"name": "Bella",   "tag": "AmFemale", "avatarColor": "#fde68a"},
+    "af_nicole":  {"name": "Nicole",  "tag": "AmFemale", "avatarColor": "#bbf7d0"},
+    "af_sky":     {"name": "Sky",     "tag": "AmFemale", "avatarColor": "#bfdbfe"},
+    "am_adam":    {"name": "Adam",    "tag": "AmMale",   "avatarColor": "#c7d2fe"},
+    "am_echo":    {"name": "Echo",    "tag": "AmMale",   "avatarColor": "#a3b3d4"},
+    "am_michael": {"name": "Michael", "tag": "AmMale",   "avatarColor": "#d4e3c5"},
+    "bf_alice":   {"name": "Alice",   "tag": "BrFemale", "avatarColor": "#fce7f3"},
+    "bm_george":  {"name": "George",  "tag": "BrMale",   "avatarColor": "#c5d4f0"},
+}
 
-_LANGUAGES = [
-    {"id": "auto",       "name": "Auto"},
-    {"id": "English",    "name": "English"},
-    {"id": "Chinese",    "name": "Chinese"},
-    {"id": "Japanese",   "name": "Japanese"},
-    {"id": "Korean",     "name": "Korean"},
-    {"id": "German",     "name": "German"},
-    {"id": "French",     "name": "French"},
-    {"id": "Russian",    "name": "Russian"},
-    {"id": "Portuguese", "name": "Portuguese"},
-    {"id": "Spanish",    "name": "Spanish"},
-    {"id": "Italian",    "name": "Italian"},
-]
+
+def _voice_payload(voice_id: str) -> dict:
+    meta = _VOICE_META.get(voice_id, {})
+    return {
+        "id": voice_id,
+        "speaker": voice_id,
+        "name": meta.get("name", voice_id.replace("_", " ").title()),
+        "tag": meta.get("tag", ""),
+        "avatarColor": meta.get("avatarColor", "#d4d4d4"),
+    }
+
+
+def _active_backend():
+    """Build a backend instance for metadata queries (cheap — no model load)."""
+    name = default_backend_name()
+    if name is None:
+        return None
+    return get_backend(name)
 
 
 def resolve_voice_to_speaker(voice_id: str) -> str:
-    """Translate a UI voice slug (e.g. 'sage') to a Qwen speaker name (e.g. 'Mia')."""
-    for v in _VOICES:
-        if v["id"] == voice_id:
-            return v["speaker"]
-    # Allow callers to pass a raw Qwen speaker name as a fallback.
+    """Pass-through: voice_id == speaker now. Kept for caller compat."""
     return voice_id
+
+
+# --- /api/backends ----------------------------------------------------------
+
+class BackendInfo(BaseModel):
+    name: str
+    available: bool
+    is_current: bool
+    is_cached: bool
+    voices: list[str]
+    default_voice: str
+    languages: list[str]
+    default_language: str
+    supports_instruct: bool
+
+
+@router.get("/backends", response_model=list[BackendInfo])
+def list_backends() -> list[BackendInfo]:
+    available = set(detect_available())
+    current = default_backend_name()
+
+    payload: list[BackendInfo] = []
+    # Always advertise both backends so the UI can explain what's missing.
+    for name in ("qwen", "kokoro"):
+        if name in available:
+            inst = get_backend(name)
+            payload.append(BackendInfo(
+                name=name, available=True, is_current=(name == current),
+                is_cached=type(inst).is_cached(),
+                voices=list(inst.voices),
+                default_voice=inst.default_voice,
+                languages=list(inst.supported_languages),
+                default_language=inst.default_language,
+                supports_instruct=inst.supports_instruct,
+            ))
+        else:
+            payload.append(BackendInfo(
+                name=name, available=False, is_current=False, is_cached=False,
+                voices=[], default_voice="", languages=[],
+                default_language="", supports_instruct=False,
+            ))
+    return payload
 
 
 @router.get("/voices")
 def list_voices() -> list[dict]:
-    return _VOICES
+    backend = _active_backend()
+    if backend is None:
+        return []
+    return [_voice_payload(v) for v in backend.voices]
 
 
 @router.get("/languages")
 def list_languages() -> list[dict]:
-    return _LANGUAGES
+    backend = _active_backend()
+    if backend is None:
+        return [{"id": "auto", "name": "Auto"}]
+    langs = [{"id": l, "name": l} for l in backend.supported_languages]
+    if len(backend.supported_languages) > 1:
+        langs = [{"id": "auto", "name": "Auto"}] + langs
+    return langs
 
 
 @router.get("/formats")

@@ -1,4 +1,10 @@
-"""Qwen3-TTS wrapper for Apple Silicon (MPS backend)."""
+"""High-level TTS orchestrator.
+
+The actual model-specific code lives in twinktalks/backends/. This module
+turns a `TTSBackend` into the chunked, retried, streaming engine the rest of
+the app expects. Backend selection (Qwen vs Kokoro) happens at construction
+time via twinktalks.backends.get_backend.
+"""
 
 import logging
 import os
@@ -6,7 +12,7 @@ from pathlib import Path
 from typing import Callable
 
 # Redirect HuggingFace + ModelScope caches into ~/.twinktalks/cache so the
-# 3.5 GB Qwen weights live next to the rest of TwinkTalks' state instead of
+# multi-GB weights live next to the rest of TwinkTalks' state instead of
 # polluting the global ~/.cache/huggingface tree. Set BEFORE the first
 # transformers / huggingface_hub import — they read these on module load.
 _TT_CACHE = Path.home() / ".twinktalks" / "cache"
@@ -14,213 +20,78 @@ _TT_CACHE.mkdir(parents=True, exist_ok=True)
 os.environ.setdefault("HF_HOME", str(_TT_CACHE / "huggingface"))
 os.environ.setdefault("HUGGINGFACE_HUB_CACHE", str(_TT_CACHE / "huggingface" / "hub"))
 os.environ.setdefault("MODELSCOPE_CACHE", str(_TT_CACHE / "modelscope"))
+os.environ.setdefault("HF_HUB_ENABLE_HF_TRANSFER", "0")
+os.environ.setdefault("TRANSFORMERS_VERBOSITY", "warning")
 
 import numpy as np
-import torch
 
 from twinktalks.audio_utils import (
-    generate_silence,
-    get_duration_seconds,
     compute_chunk_offsets,
+    generate_silence,
     silence_ms_after,
+)
+from twinktalks.backends import (
+    ModelDownloadError,
+    SynthesisError,
+    TTSBackend,
+    get_backend,
 )
 from twinktalks.chunker import Chunk
 from twinktalks.config import (
-    MODEL_ID,
-    MODELSCOPE_ID,
-    DEFAULT_SPEAKER,
     DEFAULT_LANGUAGE,
     DEFAULT_SPEED,
-    ATTN_IMPL,
-    MAX_NEW_TOKENS,
-    TOP_K,
-    TOP_P,
-    TEMPERATURE,
-    REPETITION_PENALTY,
     SAMPLE_RATE,
-    detect_device,
-    detect_dtype,
 )
-
-# Force HuggingFace to show download progress bars
-os.environ.setdefault("HF_HUB_ENABLE_HF_TRANSFER", "0")
-# Keep model-load logs visible (the user wants to see "downloading… / loading…")
-# but silence the chunk-by-chunk "Setting pad_token_id to eos_token_id" spam
-# that fires once per call — it makes the terminal look frozen.
-os.environ.setdefault("TRANSFORMERS_VERBOSITY", "warning")
 
 logger = logging.getLogger(__name__)
 
 
-def _silence_per_call_noise() -> None:
-    """Drop the transformers `Setting pad_token_id…` info line per generation.
-
-    Imported lazily so we don't pull transformers in during `import twinktalks`.
-    """
-    try:
-        import transformers
-        transformers.logging.set_verbosity_warning()
-    except Exception:
-        pass
-
-
-class SynthesisError(Exception):
-    """Raised when TTS synthesis fails."""
-
-
-class ModelDownloadError(Exception):
-    """Raised when model download fails from all sources."""
-
-
 class TTSEngine:
-    """Wrapper around Qwen3-TTS CustomVoice model."""
+    """Wraps a backend with chunking, retry, streaming, and session-resume.
+
+    Construction options:
+        backend: a TTSBackend instance, or a name ('qwen' / 'kokoro'), or None
+                 to pick the first available backend.
+        speaker: backend-specific voice ID. None = backend's default.
+        device, model_path: passed through to the Qwen backend; ignored elsewhere.
+    """
 
     def __init__(
         self,
-        model_id: str = MODEL_ID,
-        speaker: str = DEFAULT_SPEAKER,
+        backend: TTSBackend | str | None = None,
+        speaker: str | None = None,
         device: str | None = None,
         model_path: str | None = None,
     ):
-        self.model_id = model_id
-        self.speaker = speaker
-        self.device = device if device is not None else detect_device()
-        self.model_path = model_path
-        self.model = None
+        if isinstance(backend, TTSBackend):
+            self.backend = backend
+        else:
+            kwargs: dict = {}
+            if device is not None:
+                kwargs["device"] = device
+            if model_path is not None:
+                kwargs["model_path"] = model_path
+            self.backend = get_backend(backend, **kwargs)
+        self.speaker = speaker or self.backend.default_voice
 
-    def _load_from_path(self, path: str, dtype):
-        """Load model from a local directory."""
-        from qwen_tts import Qwen3TTSModel
+    # Compatibility shim: callers (and tests) check `engine.model` to see
+    # whether weights are in memory yet.
+    @property
+    def model(self):
+        return self.backend.model
 
-        print(f"[TwinkTalks] Loading model from local path: {path}")
-        self.model = Qwen3TTSModel.from_pretrained(
-            path,
-            device_map=self.device,
-            dtype=dtype,
-            attn_implementation=ATTN_IMPL,
-        )
+    def load_model(self) -> None:
+        self.backend.load_model()
 
-    def _load_from_huggingface(self, dtype):
-        """Try loading from HuggingFace Hub."""
-        from qwen_tts import Qwen3TTSModel
+    @property
+    def device(self) -> str:
+        return getattr(self.backend, "device", "cpu")
 
-        # Enable HuggingFace download logging
-        try:
-            import huggingface_hub
-            huggingface_hub.logging.set_verbosity_info()
-        except Exception:
-            pass
-        try:
-            import transformers
-            transformers.logging.set_verbosity_info()
-        except Exception:
-            pass
+    @property
+    def model_path(self) -> str | None:
+        return getattr(self.backend, "model_path", None)
 
-        print(f"[TwinkTalks] Downloading from HuggingFace: {self.model_id}")
-        self.model = Qwen3TTSModel.from_pretrained(
-            self.model_id,
-            device_map=self.device,
-            dtype=dtype,
-            attn_implementation=ATTN_IMPL,
-        )
-
-    def _download_from_modelscope(self) -> str:
-        """Download model from ModelScope and return the local path."""
-        try:
-            from modelscope import snapshot_download
-        except ImportError:
-            raise ModelDownloadError(
-                "ModelScope fallback requires the 'modelscope' package.\n"
-                "Install it with: pip install modelscope\n"
-                "Then re-run TwinkTalks."
-            )
-
-        print(f"[TwinkTalks] Downloading from ModelScope: {MODELSCOPE_ID}")
-        print("[TwinkTalks] This is an alternative source that doesn't require a HuggingFace account.")
-        local_dir = snapshot_download(MODELSCOPE_ID)
-        return local_dir
-
-    def load_model(self):
-        """Load the Qwen3-TTS model onto the specified device.
-
-        Loading order:
-        1. Local path (if --model-path was given)
-        2. HuggingFace Hub (default, works without account for public models)
-        3. ModelScope fallback (if HF fails with rate limit / auth errors)
-
-        On first run, downloads ~3.5GB. Subsequent runs load from cache.
-        """
-        from qwen_tts import Qwen3TTSModel
-
-        dtype_map = {"float16": torch.float16, "float32": torch.float32}
-        dtype_name = detect_dtype(self.device)
-        dtype = dtype_map[dtype_name]
-
-        print(f"[TwinkTalks] Device: {self.device} | Dtype: {dtype_name} | Attn: {ATTN_IMPL}")
-        logger.info("Loading model on %s...", self.device)
-
-        # 1. Local path takes priority
-        if self.model_path:
-            from pathlib import Path
-            p = Path(self.model_path).expanduser()
-            if not p.is_dir():
-                raise ModelDownloadError(f"Model path does not exist: {p}")
-            self._load_from_path(str(p), dtype)
-            self._post_load()
-            return
-
-        # 2. Try HuggingFace
-        print(f"[TwinkTalks] First run downloads ~3.5GB — this may take a few minutes...")
-        try:
-            self._load_from_huggingface(dtype)
-            self._post_load()
-            return
-        except Exception as hf_err:
-            hf_msg = str(hf_err)
-            is_rate_or_auth = any(
-                s in hf_msg for s in ("429", "401", "403", "rate limit", "Too Many Requests",
-                                       "Unauthorized", "Forbidden", "must be authenticated",
-                                       "Access denied", "gated repo")
-            )
-            if not is_rate_or_auth:
-                raise
-
-            print(f"\n[TwinkTalks] HuggingFace download failed: {hf_msg}")
-            print("[TwinkTalks] Trying ModelScope as fallback...")
-            logger.warning("HuggingFace download failed (%s), trying ModelScope...", hf_msg)
-
-        # 3. ModelScope fallback
-        try:
-            local_dir = self._download_from_modelscope()
-            self._load_from_path(local_dir, dtype)
-            self._post_load()
-            return
-        except ModelDownloadError:
-            raise
-        except Exception as ms_err:
-            raise ModelDownloadError(
-                f"Could not download the model from any source.\n\n"
-                f"HuggingFace error: {hf_msg}\n"
-                f"ModelScope error: {ms_err}\n\n"
-                f"You can download the model manually and use --model-path:\n\n"
-                f"  Option A — HuggingFace (requires free account):\n"
-                f"    pip install -U 'huggingface_hub[cli]'\n"
-                f"    huggingface-cli login\n"
-                f"    huggingface-cli download {self.model_id} --local-dir ./model\n\n"
-                f"  Option B — ModelScope (no account needed):\n"
-                f"    pip install modelscope\n"
-                f"    modelscope download --model {MODELSCOPE_ID} --local_dir ./model\n\n"
-                f"Then run: twinktalks --model-path ./model your_file.pdf"
-            ) from ms_err
-
-    def _post_load(self):
-        """Post-load setup: MPS sync and success message."""
-        if self.device == "mps" and torch.backends.mps.is_available():
-            torch.mps.synchronize()
-        # Suppress per-chunk transformers info chatter once model is loaded.
-        _silence_per_call_noise()
-        print("[TwinkTalks] Model loaded successfully!")
-        logger.info("Model loaded successfully.")
+    # --- Single-chunk synthesis --------------------------------------------
 
     def synthesize(
         self,
@@ -230,40 +101,15 @@ class TTSEngine:
         instruct: str = "",
         speaker: str | None = None,
     ) -> tuple[np.ndarray, int]:
-        """Generate audio for a single text chunk.
+        return self.backend.synthesize_one(
+            text,
+            voice=speaker or self.speaker,
+            speed=speed,
+            instruct=instruct,
+            language=language,
+        )
 
-        Args:
-            speed: Speaking rate, 0.5 (slow) to 2.0 (fast). Default 1.0.
-            instruct: Natural language instruction for voice style (e.g. "Speak calmly").
-            speaker: Override the engine's default speaker for this call. The
-                model is shared, so switching speakers does not reload weights.
-
-        Returns:
-            Tuple of (waveform as numpy array, sample rate).
-        """
-        if self.model is None:
-            self.load_model()
-
-        try:
-            # Qwen's CustomVoice speakers are lowercase identifiers — lowercase
-            # defensively so an old saved preset (e.g. "Aiden") or a typo doesn't
-            # produce "Unsupported speakers" from the model.
-            chosen = (speaker or self.speaker or "").lower()
-            wavs, sr = self.model.generate_custom_voice(
-                text=text,
-                language=language,
-                speaker=chosen,
-                speed=speed,
-                instruct=instruct,
-                max_new_tokens=MAX_NEW_TOKENS,
-                top_k=TOP_K,
-                top_p=TOP_P,
-                temperature=TEMPERATURE,
-                repetition_penalty=REPETITION_PENALTY,
-            )
-            return wavs[0], sr
-        except RuntimeError as e:
-            raise SynthesisError(f"TTS generation failed: {e}") from e
+    # --- Chunk-by-chunk + streaming ----------------------------------------
 
     def synthesize_chunks(
         self,
@@ -276,19 +122,6 @@ class TTSEngine:
         start_from: int = 0,
         speaker: str | None = None,
     ) -> tuple[np.ndarray, int, list[int]]:
-        """Generate audio for all chunks and concatenate.
-
-        Args:
-            chunks: List of text chunks to synthesize.
-            language: Language hint for the model.
-            speed: Speaking rate (0.5-2.0).
-            progress_callback: Called with (current_chunk, total_chunks).
-            session_dir: If set, save each chunk as WAV for resume support.
-            start_from: Resume from this chunk index.
-
-        Returns:
-            Tuple of (concatenated waveform, sample rate, chunk_offsets_ms).
-        """
         if not chunks:
             return np.array([], dtype=np.float32), SAMPLE_RATE, []
 
@@ -296,7 +129,6 @@ class TTSEngine:
         sample_rate = SAMPLE_RATE
         max_retries = 3
 
-        # Load previously saved chunks if resuming
         if session_dir and start_from > 0:
             import soundfile as sf
             for i in range(start_from):
@@ -331,10 +163,8 @@ class TTSEngine:
                         )
 
             if waveform is None:
-                # Insert 1 second of silence as placeholder for failed chunk
                 waveform = generate_silence(1000, sample_rate)
 
-            # Save chunk for session resume
             if session_dir:
                 import soundfile as sf
                 chunk_path = session_dir / f"chunk_{i:04d}.wav"
@@ -355,15 +185,6 @@ class TTSEngine:
         start_from: int = 0,
         speaker: str | None = None,
     ):
-        """Generate audio chunk by chunk, yielding cumulative waveform after each.
-
-        Uses incremental concatenation (O(n) total) instead of rebuilding
-        from scratch each iteration.
-
-        Yields:
-            Tuple of (cumulative_waveform, sample_rate, chunk_index, total_chunks, chunk_offsets_ms).
-            chunk_offsets_ms is None for intermediate yields and a list[int] for the final yield.
-        """
         if not chunks:
             return
 
@@ -372,7 +193,6 @@ class TTSEngine:
         max_retries = 3
         cumulative: np.ndarray | None = None
 
-        # Load previously saved chunks if resuming
         if session_dir and start_from > 0:
             import soundfile as sf
             for i in range(start_from):
@@ -416,7 +236,6 @@ class TTSEngine:
 
             segments.append(waveform)
 
-            # Incremental concatenation: append silence + new segment to cumulative
             if cumulative is None:
                 cumulative = waveform
             else:
@@ -425,7 +244,10 @@ class TTSEngine:
                 cumulative = np.concatenate([cumulative, silence, waveform])
 
             is_final = i + 1 == len(chunks)
-            offsets = compute_chunk_offsets(segments, chunks[:len(segments)], sample_rate) if is_final else None
+            offsets = (
+                compute_chunk_offsets(segments, chunks[:len(segments)], sample_rate)
+                if is_final else None
+            )
             yield cumulative, sample_rate, i + 1, len(chunks), offsets
 
 
@@ -434,16 +256,19 @@ def _concatenate_segments(
     chunks: list[Chunk],
     sample_rate: int,
 ) -> np.ndarray:
-    """Concatenate audio segments with silence gaps between them."""
     if len(segments) == 1:
         return segments[0]
-
     parts = []
     for i, seg in enumerate(segments):
         parts.append(seg)
         if i < len(segments) - 1:
             parts.append(generate_silence(silence_ms_after(chunks[i]), sample_rate))
-
     return np.concatenate(parts)
 
 
+__all__ = [
+    "TTSEngine",
+    "SynthesisError",
+    "ModelDownloadError",
+    "_concatenate_segments",
+]

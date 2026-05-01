@@ -41,12 +41,18 @@ _JOBS: dict[str, Job] = {}
 _ENGINE = None
 
 
-def _get_engine():
-    """Cached TTSEngine — model loads on first synthesize call."""
+def _get_engine(backend_name: str | None = None):
+    """Cached TTSEngine — model loads on first synthesize call. If a backend
+    different from the cached one is requested, swap (no model preloading)."""
     global _ENGINE
+    from twinktalks.tts_engine import TTSEngine
+    if _ENGINE is not None and backend_name and _ENGINE.backend.name != backend_name:
+        _ENGINE = None  # caller wants the other backend
     if _ENGINE is None:
-        from twinktalks.tts_engine import TTSEngine
-        _ENGINE = TTSEngine(model_path=os.environ.get("TWINKTALKS_MODEL_PATH"))
+        _ENGINE = TTSEngine(
+            backend=backend_name,
+            model_path=os.environ.get("TWINKTALKS_MODEL_PATH"),
+        )
     return _ENGINE
 
 
@@ -104,6 +110,7 @@ class JobRequest(BaseModel):
     chapter_markers: bool = True
     merge_chapters: bool = False
     preview_only: bool = False
+    backend: str | None = None  # 'qwen' | 'kokoro' | None (use default)
 
 
 class JobCreated(BaseModel):
@@ -196,7 +203,7 @@ def _run_synthesis(job: Job) -> None:
                 "needs_download": not _model_is_cached(),
             })
 
-        engine = _get_engine()
+        engine = _get_engine(s.get("backend"))
         start_time = time.time()
         final_offsets = None
         sample_rate = None

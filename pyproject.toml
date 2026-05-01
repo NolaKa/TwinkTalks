@@ -4,10 +4,14 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "twinktalks"
-version = "0.3.0"
-description = "Local-first PDF / EPUB / Markdown / HTML to audiobook, powered by Qwen3-TTS"
+version = "0.4.0"
+description = "Local-first PDF / EPUB / DOCX / Markdown / HTML to audiobook (Qwen3-TTS or Kokoro)"
 readme = "README.md"
 requires-python = ">=3.12"
+# Core deps include the Qwen TTS backend by default — that's what `pip install -e .`
+# gives you, matching the previous behaviour. Switch via `pip install -e .[kokoro]`
+# (which upgrades transformers and breaks Qwen in the same venv) or use a
+# separate venv if you want both.
 dependencies = [
     "qwen-tts>=0.1.1",
     "torch>=2.10.0",
@@ -34,6 +38,9 @@ dependencies = [
 dev = ["pytest>=8.0"]
 # Scanned-PDF OCR. Also requires system: brew install tesseract ghostscript qpdf
 ocr = ["ocrmypdf>=16.0"]
+# Kokoro-82M backend via mlx-audio. Mutually exclusive with Qwen — installing
+# this extra upgrades transformers to 5.x, which qwen-tts pins below.
+kokoro = ["mlx-audio>=0.4", "misaki>=0.9"]
 
 [project.scripts]
 twinktalks = "twinktalks.cli:main"

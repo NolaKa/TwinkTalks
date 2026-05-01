@@ -88,47 +88,57 @@ class TestTTSEngineInit:
 
 
 class TestLoadModelPath:
+    """Model loading lives on QwenBackend now; we patch its internals."""
+
     def test_nonexistent_path_raises(self):
-        engine = TTSEngine(model_path="/nonexistent/model/dir")
+        from twinktalks.backends.qwen import QwenBackend
+        engine = TTSEngine(backend=QwenBackend(model_path="/nonexistent/model/dir"))
         with pytest.raises(ModelDownloadError, match="does not exist"):
             engine.load_model()
 
-    @patch.object(TTSEngine, "_load_from_path")
-    @patch.object(TTSEngine, "_post_load")
-    def test_valid_local_path_skips_hf(self, mock_post, mock_load, tmp_path):
+    def test_valid_local_path_skips_hf(self, tmp_path):
         """When model_path is set and exists, should load locally without trying HF."""
-        engine = TTSEngine(model_path=str(tmp_path))
-        engine.load_model()
+        from twinktalks.backends.qwen import QwenBackend
+        backend = QwenBackend(model_path=str(tmp_path))
+        with patch.object(backend, "_load_from_path") as mock_load, \
+             patch.object(backend, "_post_load") as mock_post:
+            TTSEngine(backend=backend).load_model()
         mock_load.assert_called_once_with(str(tmp_path), _EXPECTED_DTYPE)
         mock_post.assert_called_once()
 
-    @patch.object(TTSEngine, "_load_from_huggingface")
-    @patch.object(TTSEngine, "_post_load")
-    def test_no_path_tries_huggingface(self, mock_post, mock_hf):
+    def test_no_path_tries_huggingface(self):
         """When no model_path, should try HuggingFace."""
-        engine = TTSEngine()
-        engine.load_model()
+        from twinktalks.backends.qwen import QwenBackend
+        backend = QwenBackend()
+        with patch.object(backend, "_load_from_huggingface") as mock_hf, \
+             patch.object(backend, "_post_load") as mock_post:
+            TTSEngine(backend=backend).load_model()
         mock_hf.assert_called_once()
         mock_post.assert_called_once()
 
-    @patch.object(TTSEngine, "_download_from_modelscope", return_value="/tmp/model")
-    @patch.object(TTSEngine, "_load_from_path")
-    @patch.object(TTSEngine, "_post_load")
-    @patch.object(TTSEngine, "_load_from_huggingface", side_effect=Exception("429 Too Many Requests"))
-    def test_hf_rate_limit_falls_back_to_modelscope(self, mock_hf, mock_post, mock_load, mock_ms):
+    def test_hf_rate_limit_falls_back_to_modelscope(self):
         """When HF fails with 429, should fall back to ModelScope."""
-        engine = TTSEngine()
-        engine.load_model()
+        from twinktalks.backends.qwen import QwenBackend
+        backend = QwenBackend()
+        with patch.object(backend, "_load_from_huggingface",
+                          side_effect=Exception("429 Too Many Requests")) as mock_hf, \
+             patch.object(backend, "_download_from_modelscope",
+                          return_value="/tmp/model") as mock_ms, \
+             patch.object(backend, "_load_from_path") as mock_load, \
+             patch.object(backend, "_post_load"):
+            TTSEngine(backend=backend).load_model()
         mock_hf.assert_called_once()
         mock_ms.assert_called_once()
         mock_load.assert_called_once_with("/tmp/model", _EXPECTED_DTYPE)
 
-    @patch.object(TTSEngine, "_load_from_huggingface", side_effect=Exception("some random error"))
-    def test_non_auth_error_does_not_fallback(self, mock_hf):
+    def test_non_auth_error_does_not_fallback(self):
         """Non-auth/rate-limit errors should propagate immediately, not fall back."""
-        engine = TTSEngine()
-        with pytest.raises(Exception, match="some random error"):
-            engine.load_model()
+        from twinktalks.backends.qwen import QwenBackend
+        backend = QwenBackend()
+        with patch.object(backend, "_load_from_huggingface",
+                          side_effect=Exception("some random error")):
+            with pytest.raises(Exception, match="some random error"):
+                TTSEngine(backend=backend).load_model()
 
 
 class TestSynthesizeChunks:

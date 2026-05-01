@@ -13,6 +13,7 @@ import { useTheme } from './hooks/useTheme'
 import {
   SUPPORTED_EXTENSIONS,
   type ActiveJobInfo,
+  type BackendInfo,
   type FileMetadata,
   type Language,
   type LibraryEntry,
@@ -43,6 +44,8 @@ export function App() {
 
   const [voices, setVoices] = useState<Voice[]>([])
   const [languages, setLanguages] = useState<Language[]>([])
+  const [backends, setBackends] = useState<BackendInfo[]>([])
+  const activeBackend = backends.find(b => b.is_current) ?? null
   const [presets, setPresets] = useState<{ builtin: Preset[]; user: Preset[] }>({ builtin: [], user: [] })
   const [library, setLibrary] = useState<LibraryEntry[]>([])
 
@@ -61,11 +64,23 @@ export function App() {
 
   // Boot
   useEffect(() => {
+    api.backends().then(setBackends).catch(() => {})
     api.voices().then(setVoices).catch(e => setError(prettyError(e)))
     api.languages().then(setLanguages).catch(() => {})
     api.presets().then(setPresets).catch(() => {})
     api.library().then(setLibrary).catch(() => {})
   }, [])
+
+  // When the backend's default voice changes (e.g. switching from Qwen to
+  // Kokoro), reset the chosen voice if the current one isn't in the new list.
+  useEffect(() => {
+    if (voices.length === 0) return
+    setSettings(prev => {
+      const stillValid = voices.some(v => v.id === prev.voice_id)
+      if (stillValid) return prev
+      return { ...prev, voice_id: voices[0].id }
+    })
+  }, [voices])
 
   useEffect(() => () => eventSourceRef.current?.close(), [])
 
@@ -304,7 +319,7 @@ export function App() {
             <div>
               <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 4 }}>Voice</div>
               <div style={{ fontSize: 12, color: 'var(--dim)', marginBottom: 12 }}>
-                9 voices from Qwen3-TTS — pick one and audition with the preset prompt below.
+                {backendSubtitle(activeBackend, voices.length)}
               </div>
               <VoicePicker
                 voices={voices}
@@ -315,6 +330,7 @@ export function App() {
                 presets={presets}
                 instruct={settings.instruct}
                 saveName={saveName}
+                supportsInstruct={activeBackend?.supports_instruct ?? true}
                 onInstructChange={v => updateSettings({ instruct: v })}
                 onSaveNameChange={setSaveName}
                 onApplyPreset={handleApplyPreset}
@@ -370,6 +386,18 @@ export function App() {
     </>
   )
 }
+
+function backendSubtitle(b: BackendInfo | null, voiceCount: number): string {
+  if (!b) return `${voiceCount} voices`
+  if (b.name === 'qwen') {
+    return `${voiceCount} voices from Qwen3-TTS — multilingual, supports voice-style prompts.`
+  }
+  if (b.name === 'kokoro') {
+    return `${voiceCount} Kokoro-82M voices — English only, ~10× faster than Qwen.`
+  }
+  return `${voiceCount} voices`
+}
+
 
 /** Strip raw status codes + JSON wrappers from fetch errors so the panel
  *  shows the human-readable detail instead of `Error: 415 {"detail":"…"}`. */

@@ -1,5 +1,5 @@
 import type {
-  FileMetadata, Format, Language, LibraryEntry, Preset, Voice,
+  BackendInfo, FileMetadata, Format, Language, LibraryEntry, Preset, Voice,
 } from '../types'
 
 async function jsonOrThrow<T>(res: Response): Promise<T> {
@@ -12,6 +12,7 @@ async function jsonOrThrow<T>(res: Response): Promise<T> {
 
 export const api = {
   // Static reference data
+  backends: () => fetch('/api/backends').then(r => jsonOrThrow<BackendInfo[]>(r)),
   voices: () => fetch('/api/voices').then(r => jsonOrThrow<Voice[]>(r)),
   languages: () => fetch('/api/languages').then(r => jsonOrThrow<Language[]>(r)),
   formats: () => fetch('/api/formats').then(r => jsonOrThrow<Format[]>(r)),

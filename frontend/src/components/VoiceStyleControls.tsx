@@ -5,6 +5,7 @@ type Props = {
   presets: { builtin: Preset[]; user: Preset[] }
   instruct: string
   saveName: string
+  supportsInstruct: boolean
   onInstructChange: (v: string) => void
   onSaveNameChange: (v: string) => void
   onApplyPreset: (preset: Preset) => void
@@ -21,7 +22,7 @@ function summarizeInstruct(instruct: string): string {
 
 export function VoiceStyleControls(props: Props) {
   const {
-    presets, instruct, saveName,
+    presets, instruct, saveName, supportsInstruct,
     onInstructChange, onSaveNameChange,
     onApplyPreset, onSavePreset, onDeletePreset,
   } = props
@@ -148,13 +149,20 @@ export function VoiceStyleControls(props: Props) {
             </button>
           </div>
 
-          <textarea
-            value={instruct}
-            onChange={e => onInstructChange(e.target.value)}
-            placeholder="e.g. Speak calmly like an audiobook narrator"
-            rows={2}
-            style={{ ...inputStyle, resize: 'vertical' }}
-          />
+          {supportsInstruct ? (
+            <textarea
+              value={instruct}
+              onChange={e => onInstructChange(e.target.value)}
+              placeholder="e.g. Speak calmly like an audiobook narrator"
+              rows={2}
+              style={{ ...inputStyle, resize: 'vertical' }}
+            />
+          ) : (
+            <div style={{ fontSize: 12, color: 'var(--dim)', padding: '8px 10px' }}>
+              The active backend doesn't accept voice-style prompts — use a preset above
+              or pick a different voice. Switch to the Qwen backend if you need this.
+            </div>
+          )}
 
           {presets.user.length > 0 && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>

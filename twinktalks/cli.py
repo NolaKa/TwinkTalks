@@ -84,13 +84,10 @@ def _suggest(target: str, choices: list[str], n: int = 3) -> str:
 
 
 def _speaker_arg(s: str) -> str:
-    """Accept any case for --speaker but normalize to the lowercase ID Qwen uses."""
-    s_lower = s.lower()
-    if s_lower not in AVAILABLE_SPEAKERS:
-        raise argparse.ArgumentTypeError(
-            f"unknown voice '{s}'. Available: {', '.join(AVAILABLE_SPEAKERS)}."
-        )
-    return s_lower
+    """Accept any case for --speaker. Validation against the backend's actual
+    voice list happens after we know which backend we're using; here we only
+    normalize to lowercase since both Qwen and Kokoro use lowercase IDs."""
+    return s.lower()
 
 
 def _process_merged(
@@ -127,7 +124,7 @@ def _process_merged(
         log.error("No table of contents found. Cannot use --merge-chapters.")
         sys.exit(1)
 
-    engine = TTSEngine(speaker=args.speaker, model_path=getattr(args, "model_path", None))
+    engine = TTSEngine(backend=getattr(args, "backend", None), speaker=args.speaker, model_path=getattr(args, "model_path", None))
 
     out_ext = output_path.suffix.lower()
     if out_ext not in (".mp3", ".m4b", ".wav"):
@@ -294,12 +291,21 @@ def create_parser() -> argparse.ArgumentParser:
              "Can also be passed as the second positional argument.",
     )
     parser.add_argument(
+        "--backend",
+        type=str,
+        default=None,
+        choices=["qwen", "kokoro"],
+        help="TTS backend (default: first installed). 'qwen' = multilingual + "
+             "instruct prompts; 'kokoro' = English-only, ~10× faster, ~360 MB.",
+    )
+    parser.add_argument(
         "--speaker",
-        default=DEFAULT_SPEAKER,
+        default=None,
         type=_speaker_arg,
         metavar="VOICE",
-        help=f"TTS speaker voice (default: {DEFAULT_SPEAKER}). "
-             f"Available: {', '.join(AVAILABLE_SPEAKERS)}.",
+        help="Voice ID. Defaults to the active backend's default. "
+             f"Qwen voices: {', '.join(AVAILABLE_SPEAKERS)}. "
+             "Kokoro voices: af_heart, af_bella, am_adam, bm_george, …",
     )
     parser.add_argument(
         "--language",
@@ -496,7 +502,7 @@ def _process_single(
         from twinktalks.tts_engine import TTSEngine
         from twinktalks.audio_utils import save_audio, get_duration_seconds
 
-        engine = TTSEngine(speaker=args.speaker, model_path=getattr(args, "model_path", None))
+        engine = TTSEngine(backend=getattr(args, "backend", None), speaker=args.speaker, model_path=getattr(args, "model_path", None))
         log.info("%sRendering preview of first chunk (%d chars)...",
                  prefix, len(chunks[0].text))
         waveform, sr = engine.synthesize(
@@ -513,7 +519,7 @@ def _process_single(
     from twinktalks.tts_engine import TTSEngine
     from twinktalks.session import SessionManager
 
-    engine = TTSEngine(speaker=args.speaker, model_path=getattr(args, "model_path", None))
+    engine = TTSEngine(backend=getattr(args, "backend", None), speaker=args.speaker, model_path=getattr(args, "model_path", None))
     mgr = SessionManager()
 
     start_from = 0
