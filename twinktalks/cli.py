@@ -566,6 +566,21 @@ def main(argv: list[str] | None = None):
         )
 
     input_path = Path(args.input_file)
+    if not input_path.exists():
+        # Resolve so the user can see exactly where we looked, plus the cwd
+        # they're running from — this is the most common failure for new
+        # users who put their file in some other directory.
+        log.error(
+            "File not found: %s\n"
+            "  Looked at:        %s\n"
+            "  Current directory: %s\n"
+            "Tip: pass the full path to your file, or `cd` into the directory containing it first.",
+            args.input_file, input_path.resolve(), Path.cwd(),
+        )
+        sys.exit(1)
+    if not input_path.is_file():
+        log.error("%s is not a file.", input_path.resolve())
+        sys.exit(1)
 
     # Apply --preset (overrides speaker, speed, instruct)
     if args.preset:
