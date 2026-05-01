@@ -50,9 +50,11 @@ Convert academic papers, textbooks, e-books, notes, and web pages into natural-s
 ```bash
 git clone https://github.com/NolaKa/TwinkTalks.git
 cd TwinkTalks
-chmod +x setup.sh && ./setup.sh   # creates .venv on Python 3.12 and builds the React frontend
+chmod +x setup.sh && ./setup.sh   # installs Python 3.12, Node, ffmpeg, Tesseract, builds the React frontend
 source .venv/bin/activate
 ```
+
+`setup.sh` is idempotent and installs everything it needs through Homebrew. The only prerequisite is [Homebrew](https://brew.sh/) itself; if it's missing the script prints the install command and exits.
 
 Or install as an editable package:
 

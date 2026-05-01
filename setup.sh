@@ -3,50 +3,70 @@ set -e
 
 echo "=== TwinkTalks Setup ==="
 
-# Check macOS
+# macOS check
 if [[ "$(uname)" != "Darwin" ]]; then
     echo "Warning: This project is optimized for macOS with Apple Silicon."
 fi
 
-# System deps
-echo "Installing system dependencies..."
-brew install portaudio ffmpeg sox 2>/dev/null || echo "Some brew packages already installed."
+# Homebrew — required for everything else.
+if ! command -v brew >/dev/null 2>&1; then
+    cat <<'EOF'
+Error: Homebrew is required but not installed.
 
-# Python venv — pin to 3.12 explicitly because numpy<2.0 (required by qwen-tts)
-# does not yet ship wheels for newer Python versions and the install will break.
-echo "Creating Python 3.12 virtual environment..."
-if ! command -v python3.12 >/dev/null 2>&1; then
-    echo "Error: python3.12 not found. Install it via 'brew install python@3.12'."
+Install Homebrew first by running this in a terminal:
+
+  /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+
+Then run ./setup.sh again.
+EOF
     exit 1
 fi
+
+# Python 3.12. We pin to 3.12 because numpy<2.0 (required by qwen-tts) does
+# not ship wheels for newer Python versions yet — the install will break.
+if ! command -v python3.12 >/dev/null 2>&1; then
+    echo "Installing Python 3.12 via Homebrew..."
+    brew install python@3.12
+fi
+
+# Node.js — needed to build the React frontend.
+if ! command -v npm >/dev/null 2>&1; then
+    echo "Installing Node.js via Homebrew..."
+    brew install node
+fi
+
+# Audio + OCR system deps. brew install is idempotent and prints a friendly
+# "already installed" line, so we don't suppress it.
+echo "Installing system audio + OCR dependencies..."
+brew install portaudio ffmpeg sox tesseract ghostscript qpdf
+
+# Python venv
+echo "Creating Python 3.12 virtual environment..."
 python3.12 -m venv .venv
 source .venv/bin/activate
 
 echo "Installing Python dependencies..."
 pip install --upgrade pip
 pip install -r requirements.txt
+# Optional OCR dep — we already installed the system tools above, so this
+# pulls in the Python wrapper so --ocr / Force OCR works out of the box.
+pip install ocrmypdf
 
 # NLTK data
-echo "Downloading NLTK data..."
+echo "Downloading NLTK tokenizer data..."
 python -c "import nltk; nltk.download('punkt_tab', quiet=True)"
 
-# Verify MPS
+# MPS check (informational)
 echo ""
 echo "Checking MPS (Metal) availability..."
-python -c "import torch; available = torch.backends.mps.is_available(); print(f'MPS available: {available}')"
+python -c "import torch; print(f'MPS available: {torch.backends.mps.is_available()}')"
 
-# Output dir
 mkdir -p output
 
-# Frontend (optional): build the React UI so twinktalks-server can serve it.
-if command -v npm >/dev/null 2>&1; then
-    echo ""
-    echo "Building frontend (Vite)..."
-    (cd frontend && npm install --silent && npm run build)
-else
-    echo ""
-    echo "Skipping frontend build — npm not found. Install Node.js if you want the web UI."
-fi
+# Frontend
+echo ""
+echo "Building frontend (Vite)..."
+(cd frontend && npm install --silent && npm run build)
 
 echo ""
 echo "=== Setup complete! ==="

@@ -200,10 +200,21 @@ def create_parser() -> argparse.ArgumentParser:
         prog="twinktalks",
         description="TwinkTalks - Convert PDF documents to speech using Qwen3-TTS",
     )
-    parser.add_argument("input_file", help="Path to the input PDF or EPUB file")
+    parser.add_argument(
+        "input_file",
+        nargs="?",
+        help="Path to the input PDF, EPUB, MD, TXT, or HTML file",
+    )
+    parser.add_argument(
+        "output_pos",
+        nargs="?",
+        default=None,
+        help=argparse.SUPPRESS,  # alias for -o so `twinktalks in.pdf out.wav` works
+    )
     parser.add_argument(
         "-o", "--output",
-        help="Output audio file path (default: output/<input_name>.wav)",
+        help="Output audio file path (default: output/<input_name>.wav). "
+             "Can also be passed as the second positional argument.",
     )
     parser.add_argument(
         "--speaker",
@@ -512,7 +523,13 @@ def main(argv: list[str] | None = None):
     )
     log = logging.getLogger("twinktalks")
 
-    # Handle --list-presets
+    # Accept output as a second positional too — `twinktalks in.pdf out.wav`
+    # is what most users will type intuitively.
+    if args.output_pos and not args.output:
+        args.output = args.output_pos
+
+    # Handle --list-presets / --list-sessions before the input_file check
+    # because they don't need one.
     if args.list_presets:
         from twinktalks.presets import BUILTIN_PRESETS, load_user_presets
         print("Built-in presets:")
@@ -526,6 +543,27 @@ def main(argv: list[str] | None = None):
                 instruct_preview = p.instruct[:60] + "..." if len(p.instruct) > 60 else p.instruct
                 print(f"  {p.name:20s}  {p.speaker:8s}  {p.speed}x  {instruct_preview or '(default)'}")
         return
+
+    if args.list_sessions:
+        from twinktalks.session import SessionManager
+        mgr = SessionManager()
+        sessions = mgr.list_sessions()
+        if not sessions:
+            print("No saved sessions.")
+        else:
+            for s in sessions:
+                print(f"  {s.id}  {Path(s.pdf_path).name}  chunk {s.completed_chunk}/{s.total_chunks}  [{s.updated_at}]")
+        return
+
+    if not args.input_file:
+        parser.error(
+            "an input file is required.\n"
+            "Examples:\n"
+            "  twinktalks paper.pdf\n"
+            "  twinktalks paper.pdf output.mp3\n"
+            "  twinktalks paper.pdf -o output.mp3 --speaker Ryan\n"
+            "Run `twinktalks --help` for the full list of options."
+        )
 
     input_path = Path(args.input_file)
 
@@ -547,18 +585,6 @@ def main(argv: list[str] | None = None):
         from twinktalks.toc import format_toc
         chapters = extract_toc(str(input_path))
         print(format_toc(chapters))
-        return
-
-    # Handle --list-sessions
-    if args.list_sessions:
-        from twinktalks.session import SessionManager
-        mgr = SessionManager()
-        sessions = mgr.list_sessions()
-        if not sessions:
-            print("No saved sessions.")
-        else:
-            for s in sessions:
-                print(f"  {s.id}  {Path(s.pdf_path).name}  chunk {s.completed_chunk}/{s.total_chunks}  [{s.updated_at}]")
         return
 
     # Handle --chapters all + --merge-chapters: single audiobook file
