@@ -217,10 +217,14 @@ class TTSEngine:
             self.load_model()
 
         try:
+            # Qwen's CustomVoice speakers are lowercase identifiers — lowercase
+            # defensively so an old saved preset (e.g. "Aiden") or a typo doesn't
+            # produce "Unsupported speakers" from the model.
+            chosen = (speaker or self.speaker or "").lower()
             wavs, sr = self.model.generate_custom_voice(
                 text=text,
                 language=language,
-                speaker=speaker or self.speaker,
+                speaker=chosen,
                 speed=speed,
                 instruct=instruct,
                 max_new_tokens=MAX_NEW_TOKENS,

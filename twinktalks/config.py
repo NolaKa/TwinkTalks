@@ -3,11 +3,14 @@
 # Model
 MODEL_ID = "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice"
 MODELSCOPE_ID = "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice"
-DEFAULT_SPEAKER = "Aiden"
+# These are the only speaker IDs Qwen3-TTS-CustomVoice accepts. They're case-
+# sensitive (lowercase) — passing anything else gets you "Unsupported speakers"
+# from the model. If a future model release adds voices, extend this list.
+DEFAULT_SPEAKER = "aiden"
 DEFAULT_LANGUAGE = "English"
 AVAILABLE_SPEAKERS = [
-    "Aiden", "Ryan", "Aria", "Claire", "Emma",
-    "Leo", "Mia", "Noah", "Sophia",
+    "aiden", "dylan", "eric", "ono_anna",
+    "ryan", "serena", "sohee", "uncle_fu", "vivian",
 ]
 
 # Device — auto-detected at runtime, can be overridden via env or args.

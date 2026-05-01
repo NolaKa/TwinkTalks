@@ -17,15 +17,17 @@ from twinktalks.presets import (
 router = APIRouter(tags=["static"])
 
 
-# Map the design's 6 voice slots to actual Qwen3-TTS-CustomVoice speakers.
-# The "id" is the slug used by the UI; "speaker" is what the model expects.
+# Map the design's 6 voice slots to actual Qwen3-TTS-CustomVoice speaker IDs.
+# Qwen exposes 9 voices total: aiden, dylan, eric, ono_anna, ryan, serena,
+# sohee, uncle_fu, vivian. We surface six in the UI matched to the design's
+# six tags; the CLI's --voice flag still allows any of the nine.
 _VOICES = [
-    {"id": "aiden", "name": "Aiden",  "speaker": "Aiden",  "tag": "Warm",     "avatarColor": "#e5b8a3"},
-    {"id": "sage",  "name": "Sage",   "speaker": "Mia",    "tag": "Calm",     "avatarColor": "#b3d4c5"},
-    {"id": "rio",   "name": "Rio",    "speaker": "Aria",   "tag": "Bright",   "avatarColor": "#f0c6e0"},
-    {"id": "koen",  "name": "Koen",   "speaker": "Leo",    "tag": "Deep",     "avatarColor": "#a3b3d4"},
-    {"id": "iris",  "name": "Iris",   "speaker": "Claire", "tag": "Whisper",  "avatarColor": "#e0d4a3"},
-    {"id": "milo",  "name": "Milo",   "speaker": "Ryan",   "tag": "Narrator", "avatarColor": "#c8b3d4"},
+    {"id": "aiden", "name": "Aiden", "speaker": "aiden",   "tag": "Warm",     "avatarColor": "#e5b8a3"},
+    {"id": "sage",  "name": "Sage",  "speaker": "serena",  "tag": "Calm",     "avatarColor": "#b3d4c5"},
+    {"id": "rio",   "name": "Rio",   "speaker": "vivian",  "tag": "Bright",   "avatarColor": "#f0c6e0"},
+    {"id": "koen",  "name": "Koen",  "speaker": "dylan",   "tag": "Deep",     "avatarColor": "#a3b3d4"},
+    {"id": "iris",  "name": "Iris",  "speaker": "sohee",   "tag": "Whisper",  "avatarColor": "#e0d4a3"},
+    {"id": "milo",  "name": "Milo",  "speaker": "ryan",    "tag": "Narrator", "avatarColor": "#c8b3d4"},
 ]
 
 _LANGUAGES = [

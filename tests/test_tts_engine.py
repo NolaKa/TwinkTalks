@@ -75,12 +75,12 @@ class TestTTSEngineInit:
     def test_default_init(self):
         engine = TTSEngine()
         assert engine.model is None
-        assert engine.speaker == "Aiden"
+        assert engine.speaker == "aiden"
         assert engine.model_path is None
 
     def test_custom_speaker(self):
-        engine = TTSEngine(speaker="Ryan")
-        assert engine.speaker == "Ryan"
+        engine = TTSEngine(speaker="ryan")
+        assert engine.speaker == "ryan"
 
     def test_model_path(self):
         engine = TTSEngine(model_path="/some/path")

@@ -33,7 +33,7 @@ Convert academic papers, textbooks, e-books, notes, and web pages into natural-s
 - **CLI session resume** — saves progress per chunk to `~/.twinktalks/sessions/<id>/` so an interrupted CLI run can continue from where it stopped (`--resume <id>`).
 - **Academic text cleanup** — removes `[1,2]` citations, `(Author et al., 2024)`, figure/table captions, URLs, DOIs, section numbers; expands abbreviations (`e.g.` → `for example`).
 - **Sentence- and page-aware chunking** — ~500-character chunks at sentence boundaries (NLTK) with cross-page paragraph stitching; each chunk records its source page for accurate chapter-marker placement.
-- **Voices** — 9 Qwen3-TTS speakers in the CLI (Aiden, Ryan, Aria, Claire, Emma, Leo, Mia, Noah, Sophia); the web UI surfaces 6 of them under design-friendly names (Aiden, Sage, Rio, Koen, Iris, Milo).
+- **Voices** — 9 Qwen3-TTS speakers (`aiden`, `dylan`, `eric`, `ono_anna`, `ryan`, `serena`, `sohee`, `uncle_fu`, `vivian`); the web UI surfaces 6 of them under design-friendly names (Aiden, Sage, Rio, Koen, Iris, Milo). The CLI's `--speaker` flag is case-insensitive.
 - **10+ languages** — English, Chinese, Japanese, Korean, German, French, Russian, Portuguese, Spanish, Italian.
 
 ## Requirements
@@ -108,7 +108,7 @@ twinktalks input/notes.md output/notes.mp3
 twinktalks input/article.html output/article.wav
 
 # Choose voice and language (or "Auto" for auto-detect)
-python -m twinktalks paper.pdf -o output.mp3 --speaker Ryan --language Auto
+python -m twinktalks paper.pdf -o output.mp3 --speaker ryan --language Auto
 
 # 10-second voice preview before committing to the full run
 python -m twinktalks paper.pdf --preview -o output.mp3
@@ -205,14 +205,14 @@ python -m twinktalks textbook.pdf --chapters all --merge-chapters -o book.m4b   
 
 | Preset | Speaker | Speed | Style |
 |--------|---------|-------|-------|
-| Default | Aiden | 1.0x | (neutral) |
-| Calm Narrator | Aiden | 0.9x | Speak in a calm, measured, soothing tone... |
-| Energetic | Ryan | 1.1x | Speak with energy and enthusiasm... |
-| Warm & Gentle | Aria | 0.9x | Speak warmly and gently... |
-| Lecture/Academic | Aiden | 0.85x | Speak like a university professor giving a clear, structured lecture... |
-| Audiobook | Ryan | 0.95x | Speak like a professional audiobook narrator... |
-| Fast Summary | Ryan | 1.3x | Speak quickly and concisely... |
-| Whisper | Aria | 0.8x | Speak in a soft, intimate whisper... |
+| Default | aiden | 1.0x | (neutral) |
+| Calm Narrator | aiden | 0.9x | Speak in a calm, measured, soothing tone... |
+| Energetic | ryan | 1.1x | Speak with energy and enthusiasm... |
+| Warm & Gentle | serena | 0.9x | Speak warmly and gently... |
+| Lecture/Academic | aiden | 0.85x | Speak like a university professor giving a clear, structured lecture... |
+| Audiobook | ryan | 0.95x | Speak like a professional audiobook narrator... |
+| Fast Summary | ryan | 1.3x | Speak quickly and concisely... |
+| Whisper | sohee | 0.8x | Speak in a soft, intimate whisper... |
 
 **Custom presets:** save your own speaker + speed + instruct combos via the *Voice style* row in the web UI (open the row → type a name into *Save current as…* → click Save), or manage them directly in `~/.twinktalks/presets.json`. User presets appear with a ★ prefix in the dropdown and can be deleted with the × button.
 

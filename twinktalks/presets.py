@@ -11,42 +11,42 @@ PRESETS_FILE = "~/.twinktalks/presets.json"
 # Built-in voice style presets
 BUILTIN_PRESETS: dict[str, dict] = {
     "Default": {
-        "speaker": "Aiden",
+        "speaker": "aiden",
         "speed": 1.0,
         "instruct": "",
     },
     "Calm Narrator": {
-        "speaker": "Aiden",
+        "speaker": "aiden",
         "speed": 0.9,
         "instruct": "Speak in a calm, professional narrator style. Clear and steady.",
     },
     "Energetic": {
-        "speaker": "Ryan",
+        "speaker": "ryan",
         "speed": 1.1,
         "instruct": "Speak with energy and enthusiasm, lively and engaging.",
     },
     "Warm & Gentle": {
-        "speaker": "Aria",
+        "speaker": "serena",
         "speed": 0.9,
         "instruct": "Speak warmly and gently, like reading a bedtime story.",
     },
     "Lecture / Academic": {
-        "speaker": "Aiden",
+        "speaker": "aiden",
         "speed": 0.85,
         "instruct": "Speak like a university professor giving a clear, structured lecture. Methodical and articulate.",
     },
     "Audiobook": {
-        "speaker": "Ryan",
+        "speaker": "ryan",
         "speed": 0.95,
         "instruct": "Speak like a professional audiobook narrator. Expressive but natural, with good pacing.",
     },
     "Fast Summary": {
-        "speaker": "Ryan",
+        "speaker": "ryan",
         "speed": 1.3,
         "instruct": "Speak quickly and efficiently, like giving a brief summary.",
     },
     "Whisper": {
-        "speaker": "Aria",
+        "speaker": "sohee",
         "speed": 0.8,
         "instruct": "Speak softly in a hushed, intimate whisper.",
     },

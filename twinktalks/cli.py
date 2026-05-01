@@ -83,6 +83,16 @@ def _suggest(target: str, choices: list[str], n: int = 3) -> str:
     return f" Did you mean: {', '.join(matches)}?"
 
 
+def _speaker_arg(s: str) -> str:
+    """Accept any case for --speaker but normalize to the lowercase ID Qwen uses."""
+    s_lower = s.lower()
+    if s_lower not in AVAILABLE_SPEAKERS:
+        raise argparse.ArgumentTypeError(
+            f"unknown voice '{s}'. Available: {', '.join(AVAILABLE_SPEAKERS)}."
+        )
+    return s_lower
+
+
 def _process_merged(
     input_path: Path,
     output_path: Path,
@@ -286,8 +296,10 @@ def create_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--speaker",
         default=DEFAULT_SPEAKER,
-        choices=AVAILABLE_SPEAKERS,
-        help=f"TTS speaker voice (default: {DEFAULT_SPEAKER})",
+        type=_speaker_arg,
+        metavar="VOICE",
+        help=f"TTS speaker voice (default: {DEFAULT_SPEAKER}). "
+             f"Available: {', '.join(AVAILABLE_SPEAKERS)}.",
     )
     parser.add_argument(
         "--language",
