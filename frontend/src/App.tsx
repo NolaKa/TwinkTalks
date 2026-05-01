@@ -7,7 +7,6 @@ import { GenerateButton } from './components/GenerateButton'
 import { Hero } from './components/Hero'
 import { Library } from './components/Library'
 import { SettingsList } from './components/SettingsList'
-import { Topbar } from './components/Topbar'
 import { VoicePicker } from './components/VoicePicker'
 import { VoiceStyleControls } from './components/VoiceStyleControls'
 import { useTheme } from './hooks/useTheme'
@@ -197,9 +196,8 @@ export function App() {
 
   return (
     <>
-      <Topbar theme={theme} setTheme={setTheme} />
       <main style={{ maxWidth: 1080, margin: '0 auto', padding: '56px 32px 80px' }}>
-        <Hero />
+        <Hero theme={theme} setTheme={setTheme} />
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 360px', gap: 32 }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
             {file ? (
@@ -262,7 +260,7 @@ export function App() {
           </div>
 
           <aside>
-            <div style={{ position: 'sticky', top: 80, display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div style={{ position: 'sticky', top: 32, display: 'flex', flexDirection: 'column', gap: 16 }}>
               <ActiveJob job={activeJob} />
               <Library entries={library} onPlay={handlePlay} />
               <div style={{ fontSize: 11, color: 'var(--dim-2)', padding: '0 4px', lineHeight: 1.5 }}>
