@@ -96,27 +96,48 @@ export function Library({
                   {fmtDur(r.duration_s)}
                 </div>
               </div>
-              <button
-                onClick={e => {
-                  e.stopPropagation()
-                  onPlay(r)
-                }}
-                style={{
-                  width: 24,
-                  height: 24,
-                  border: '1px solid var(--line)',
-                  borderRadius: 6,
-                  background: 'var(--bg)',
-                  display: 'grid',
-                  placeItems: 'center',
-                  color: 'var(--ink)',
-                  cursor: 'pointer',
-                }}
-              >
-                <svg width="9" height="9" viewBox="0 0 9 9" fill="currentColor">
-                  <path d="M2 1l5 3.5L2 8z" />
-                </svg>
-              </button>
+              <span style={{ display: 'flex', gap: 6, flexShrink: 0 }} onClick={e => e.stopPropagation()}>
+                <a
+                  href={r.audio_url}
+                  download={r.name}
+                  title={`Download ${r.name}`}
+                  style={{
+                    width: 24,
+                    height: 24,
+                    border: '1px solid var(--line)',
+                    borderRadius: 6,
+                    background: 'var(--bg)',
+                    display: 'grid',
+                    placeItems: 'center',
+                    color: 'var(--dim)',
+                    cursor: 'pointer',
+                    textDecoration: 'none',
+                  }}
+                >
+                  <svg width="10" height="10" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M7 1v9M3.5 6.5L7 10l3.5-3.5M2 12.5h10" />
+                  </svg>
+                </a>
+                <button
+                  onClick={() => onPlay(r)}
+                  title={`Play ${r.name}`}
+                  style={{
+                    width: 24,
+                    height: 24,
+                    border: '1px solid var(--line)',
+                    borderRadius: 6,
+                    background: 'var(--bg)',
+                    display: 'grid',
+                    placeItems: 'center',
+                    color: 'var(--ink)',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <svg width="9" height="9" viewBox="0 0 9 9" fill="currentColor">
+                    <path d="M2 1l5 3.5L2 8z" />
+                  </svg>
+                </button>
+              </span>
             </div>
           ))
         )}

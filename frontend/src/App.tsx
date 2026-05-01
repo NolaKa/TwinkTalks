@@ -59,6 +59,7 @@ export function App() {
   const [activeJob, setActiveJob] = useState<ActiveJobInfo | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [currentAudio, setCurrentAudio] = useState<{ url: string; name: string } | null>(null)
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const eventSourceRef = useRef<EventSource | null>(null)
 
@@ -237,6 +238,11 @@ export function App() {
         es.close()
         setBusy(false)
         setActiveJob(null)
+        const stem = file.title || file.name.replace(/\.[^.]+$/, '')
+        setCurrentAudio({
+          url: data.audio_url,
+          name: `${stem}.${data.format || 'mp3'}`,
+        })
         if (audioRef.current) {
           audioRef.current.src = data.audio_url
           audioRef.current.play().catch(() => {})
@@ -293,6 +299,7 @@ export function App() {
     if (!audioRef.current) return
     audioRef.current.src = entry.audio_url
     audioRef.current.play().catch(() => {})
+    setCurrentAudio({ url: entry.audio_url, name: entry.name })
   }, [])
 
   return (
@@ -361,7 +368,36 @@ export function App() {
               </div>
             )}
 
-            <audio ref={audioRef} controls style={{ width: '100%' }} />
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <audio ref={audioRef} controls style={{ flex: 1, minWidth: 0 }} />
+              {currentAudio && (
+                <a
+                  href={currentAudio.url}
+                  download={currentAudio.name}
+                  title={`Download ${currentAudio.name}`}
+                  style={{
+                    flexShrink: 0,
+                    width: 36,
+                    height: 36,
+                    display: 'inline-grid',
+                    placeItems: 'center',
+                    border: '1px solid var(--line)',
+                    borderRadius: 8,
+                    background: 'var(--bg)',
+                    color: 'var(--ink)',
+                    textDecoration: 'none',
+                    cursor: 'pointer',
+                    transition: 'border-color 120ms ease, background 120ms ease',
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.background = 'var(--bg-soft)' }}
+                  onMouseLeave={e => { e.currentTarget.style.background = 'var(--bg)' }}
+                >
+                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M7 1v9M3.5 6.5L7 10l3.5-3.5M2 12.5h10" />
+                  </svg>
+                </a>
+              )}
+            </div>
 
             <div style={{ position: 'sticky', bottom: 24, zIndex: 5 }}>
               <GenerateButton
