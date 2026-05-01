@@ -12,6 +12,10 @@ output/
 *.pdf
 models/
 
+# User input — keep the folder + its README, ignore the actual documents
+input/*
+!input/README.md
+
 # Secrets
 .env
 .env.*

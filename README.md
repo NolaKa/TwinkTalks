@@ -95,12 +95,17 @@ cd frontend && npm run dev       # frontend on :5173 (proxies /api to :7860)
 
 ### CLI
 
+Setup creates two folders for convenience: `input/` (drop your documents
+here) and `output/` (where audio lands by default). You can pass any
+path you want — these are just the defaults the examples assume.
+
 ```bash
 # Basic: any supported format to WAV/MP3/M4B
-python -m twinktalks paper.pdf -o output.wav
-python -m twinktalks book.epub -o output.m4b
-python -m twinktalks notes.md -o notes.mp3
-python -m twinktalks article.html -o article.wav
+twinktalks input/paper.pdf                       # → output/paper.wav (default)
+twinktalks input/paper.pdf output/paper.mp3      # output as second positional
+twinktalks input/book.epub -o output/book.m4b    # or use the -o flag
+twinktalks input/notes.md output/notes.mp3
+twinktalks input/article.html output/article.wav
 
 # Choose voice and language (or "Auto" for auto-detect)
 python -m twinktalks paper.pdf -o output.mp3 --speaker Ryan --language Auto

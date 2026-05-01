@@ -61,7 +61,7 @@ echo ""
 echo "Checking MPS (Metal) availability..."
 python -c "import torch; print(f'MPS available: {torch.backends.mps.is_available()}')"
 
-mkdir -p output
+mkdir -p output input
 
 # Frontend
 echo ""
