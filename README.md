@@ -13,29 +13,28 @@ Convert academic papers, textbooks, e-books, notes, and web pages into natural-s
 ## Features
 
 - **Multi-format input** — PDF (multi-column papers via pdfplumber `layout=True` + PyMuPDF fallback), EPUB (ebooklib + BeautifulSoup), Markdown (heading-aware), plain text, HTML
-- **OCR for scanned PDFs** — `--ocr` runs ocrmypdf (Tesseract) before extraction, opening up old books and image-only PDFs
-- **M4B audiobook output** — proper audiobook container with embedded chapter atoms; works in iOS Books, Apple Podcasts
-- **Auto-tagged audio** — title, author, and a cover image (rendered first PDF page or EPUB cover) embedded in MP3/M4B via mutagen
-- **Single-file audiobook from chapters** — `--merge-chapters` concatenates every TOC chapter into one M4B with chapter markers
-- **10-second voice preview** — `--preview` (CLI) or PREVIEW VOICE button (web) renders just the first chunk so you can audition the voice before committing to a long run
-- **Auto-detect language** — pick "Auto" / pass `--language Auto` and TwinkTalks runs langdetect on the first ~500 chars to pick the right Qwen3-TTS language
-- **File queue** — upload multiple files at once, processes them sequentially with per-file progress tracking
-- **Streaming playback** — web UI plays audio progressively as chunks are generated, no waiting for the full file
-- **Chapter markers in MP3** — embeds ID3v2 CHAP/CTOC frames so you can skip between chapters in VLC, Apple Podcasts, Overcast
-- **WAV / MP3 / M4B export** — choose output format in the web UI or via file extension in CLI
-- **Batch processing** — `--chapters all` generates a separate audio file per chapter (or one merged M4B with `--merge-chapters`)
-- **Table of contents & chapters** — auto-detects TOC from PDF (PyMuPDF `get_toc()`), EPUB (spine items), Markdown headings, or HTML `<h1>`-`<h3>`
-- **Skip tables** — excludes diagnostic tables, DSM criteria, etc. from speech output via `find_tables()` bbox exclusion
-- **Voice modulation** — natural language `instruct` parameter passed to `generate_custom_voice()` controls emotion, tone, and style (e.g. "Speak calmly like an audiobook narrator")
-- **8 built-in voice presets** — Default, Calm Narrator, Energetic, Warm & Gentle, Lecture/Academic, Audiobook, Fast Summary, Whisper
-- **Custom favorites** — save your own speaker + speed + instruct combos as reusable presets (`~/.twinktalks/presets.json`), appear with `*` prefix in dropdown
-- **Speed control** — adjustable speaking rate (0.5x-2.0x) via native Qwen3-TTS `speed` parameter, no post-processing
-- **Session resume** — saves progress per chunk to `~/.twinktalks/sessions/<id>/` (session.json + chunk_NNNN.wav files), resume interrupted generation from where it stopped
-- **Academic text cleanup** — removes `[1,2]` citations, `(Author et al., 2024)`, figure/table captions, URLs, DOIs, section numbers; expands abbreviations (`e.g.` → `for example`)
-- **Sentence-aware chunking** — splits long documents into ~500 character chunks at sentence boundaries (NLTK), preserving paragraph structure with `max_new_tokens=1024`
-- **Page-aware chunking** — tracks which page each chunk originated from (`Chunk.source_page`), enabling accurate chapter marker placement in MP3
-- **9 speaker voices** — Aiden, Ryan, Aria, Claire, Emma, Leo, Mia, Noah, Sophia
-- **10+ languages** — English, Chinese, Japanese, Korean, German, French, Russian, Portuguese, Spanish, Italian
+- **OCR for scanned PDFs** — `--ocr` runs ocrmypdf (Tesseract) before extraction, opening up old books and image-only PDFs. `--ocr-language auto` picks every Tesseract pack you have installed.
+- **M4B audiobook output** — proper audiobook container with embedded chapter atoms (via ffmpeg remux); works in iOS Books, Apple Podcasts.
+- **Auto-tagged audio** — title, author, and a cover image (rendered first PDF page or EPUB cover) embedded in MP3 (ID3v2) and M4B (MP4 atoms) via mutagen.
+- **Single-file audiobook from chapters** — `--merge-chapters` (CLI) or the *Merge chapters* toggle (web) concatenates every TOC chapter into one file with chapter markers.
+- **Voice preview** — `--preview` (CLI) renders only the first chunk so you can audition the voice before committing to a long run.
+- **Auto-detect language** — pick "Auto" in the UI / pass `--language Auto` and TwinkTalks runs langdetect on the first ~500 chars to pick the right Qwen3-TTS language.
+- **Streaming progress** — web UI streams chunk-level progress over Server-Sent Events; the sidebar's Active Job card updates per chunk with chunk count, rendered duration, and ETA.
+- **Library** — every audiobook you've generated is stored in `~/.twinktalks/library/` and listed in the sidebar with cover art read back from embedded tags.
+- **Chapter markers** — ID3v2 CHAP/CTOC frames in MP3, MP4 chapter atoms in M4B, jump between sections in VLC / Apple Podcasts / Overcast / iOS Books.
+- **WAV / MP3 / M4B export** — choose the format in the web UI segmented control or via file extension in CLI.
+- **Batch processing** — `--chapters all` generates a separate audio file per TOC chapter (or one merged M4B with `--merge-chapters`).
+- **Table of contents & chapters** — auto-detects TOC from PDF (PyMuPDF `get_toc()`), EPUB (spine items), Markdown headings, or HTML `<h1>`-`<h3>`.
+- **Skip tables** — excludes diagnostic tables, DSM criteria, etc. from speech output via `find_tables()` bbox exclusion.
+- **Voice style instruct** — natural-language hint passed to Qwen3-TTS `generate_custom_voice()` to control emotion, tone, and pace (e.g. "Speak calmly like an audiobook narrator").
+- **8 built-in voice presets** — Default, Calm Narrator, Energetic, Warm & Gentle, Lecture/Academic, Audiobook, Fast Summary, Whisper.
+- **Custom presets** — save your own speaker + speed + instruct combos via the *Voice style* row in the web UI (or `--preset` in CLI). Persisted to `~/.twinktalks/presets.json`; user presets show with a ★ prefix.
+- **Speed control** — adjustable speaking rate (0.5x–2.0x) via native Qwen3-TTS `speed` parameter, no post-processing.
+- **CLI session resume** — saves progress per chunk to `~/.twinktalks/sessions/<id>/` so an interrupted CLI run can continue from where it stopped (`--resume <id>`).
+- **Academic text cleanup** — removes `[1,2]` citations, `(Author et al., 2024)`, figure/table captions, URLs, DOIs, section numbers; expands abbreviations (`e.g.` → `for example`).
+- **Sentence- and page-aware chunking** — ~500-character chunks at sentence boundaries (NLTK) with cross-page paragraph stitching; each chunk records its source page for accurate chapter-marker placement.
+- **Voices** — 9 Qwen3-TTS speakers in the CLI (Aiden, Ryan, Aria, Claire, Emma, Leo, Mia, Noah, Sophia); the web UI surfaces 6 of them under design-friendly names (Aiden, Sage, Rio, Koen, Iris, Milo).
+- **10+ languages** — English, Chinese, Japanese, Korean, German, French, Russian, Portuguese, Spanish, Italian.
 
 ## Requirements
 
@@ -76,9 +75,10 @@ The interface is a React + Vite SPA served by FastAPI. It exposes:
 
 - **Drop zone / file card** — drag-and-drop or click to upload PDF, EPUB, Markdown, TXT, HTML. Once loaded, you see file size, page/chapter count, word count, and an estimated audio duration. Title and cover art come from the document's metadata.
 - **Voice picker** — a 3×2 grid of six voices mapped to Qwen3-TTS speakers (Aiden, Sage, Rio, Koen, Iris, Milo).
-- **Settings list** — Language (with `Auto`), Speed slider (0.5–2.0×), Format (WAV/MP3/M4B segmented), Chapter markers toggle, OCR fallback toggle.
-- **Advanced** — Saved presets dropdown + save/delete (built-in + your favorites in `~/.twinktalks/presets.json`), voice style instruct, OCR language, skip references/tables, merge-chapters.
-- **Generate** — streaming synthesis with progress events sent over Server-Sent Events; the sidebar's Active Job card updates per chunk with chunk count, rendered duration, and ETA. ⌘⏎ also triggers it.
+- **Voice style** — collapsible row right under the voice tiles. Click to expand a panel with a *built-in or saved* preset dropdown, a *Save current as…* input + button, an instruct textarea, and a list of your saved presets with ★ delete.
+- **Settings list** — Language (with `Auto`), Speed slider (0.5–2.0×), Format segmented (WAV/MP3/M4B), Chapter markers toggle, OCR fallback toggle.
+- **Advanced** (inside Settings list) — OCR language, *skip references*, *skip tables*, and *merge all chapters into one audiobook*.
+- **Generate** — streams synthesis progress over Server-Sent Events; the sidebar's Active Job card updates per chunk with chunk count, rendered duration, and ETA. ⌘⏎ also triggers it.
 - **Library** — every audiobook you've generated, stored in `~/.twinktalks/library/`. Click a row to play in-browser; covers come from embedded ID3/MP4 tags.
 - **Theme** — single light/dark toggle in the topbar, persisted in `localStorage`. First-time visit follows your system preference.
 
@@ -163,34 +163,36 @@ python -m twinktalks paper.pdf --resume <session-id> -o output.wav
 ## How It Works
 
 ```
-PDF/EPUB → Extract text → Preprocess → Chunk → TTS → Audio
+PDF / EPUB / MD / TXT / HTML → Extract text → Preprocess → Chunk → TTS → Audio
 ```
 
-1. **Extract** — pdfplumber reads PDF with `layout=True` for multi-column support (or ebooklib for EPUB), crops headers/footers, truncates at References. Supports per-page extraction for chapter marker timing.
-2. **Preprocess** — removes `[1,2]` citations, `(Author et al., 2024)`, figure/table captions, URLs, DOIs, section numbers; expands abbreviations (`e.g.` → `for example`). All 20+ regex patterns pre-compiled at module load.
-3. **Chunk** — splits into ~500 character chunks at sentence boundaries, preserving paragraph structure. Optional page-aware mode tracks source page per chunk for chapter marker placement.
-4. **Synthesize** — Qwen3-TTS generates audio chunk by chunk with retry logic (3 attempts, silence fallback), applying voice style via `instruct` parameter. Streaming mode yields cumulative waveform after each chunk with incremental concatenation.
-5. **Export** — concatenates with natural pauses (400ms between sentences, 800ms between paragraphs), saves as WAV or MP3. For MP3 with `--chapter-markers`, embeds ID3v2 CHAP/CTOC frames mapping TOC chapters to audio timestamps.
+1. **Extract** — pdfplumber reads PDF with `layout=True` for multi-column support (PyMuPDF fallback). EPUB goes through ebooklib + BeautifulSoup. Markdown is unwrapped of its markup; HTML is read with BeautifulSoup. Headers/footers are cropped, References are truncated. Supports per-page extraction for chapter-marker timing. Scanned PDFs route through ocrmypdf when `--ocr` is set.
+2. **Preprocess** — removes `[1,2]` citations, `(Author et al., 2024)`, figure/table captions, URLs, DOIs, section numbers, isolated page numbers; expands abbreviations (`e.g.` → `for example`). All 20+ regex patterns are pre-compiled at module load.
+3. **Chunk** — splits into ~500-character chunks at sentence boundaries. Page-aware mode stitches paragraphs that cross a page break and tags each chunk with its source page so chapter markers can be placed accurately.
+4. **Synthesize** — Qwen3-TTS generates audio chunk by chunk with retry logic (3 attempts, silence fallback), applying voice style via `instruct`. Streaming mode yields cumulative waveform after each chunk; the FastAPI server forwards these as SSE progress events.
+5. **Export** — concatenates with natural pauses (400ms between sentences, 800ms between paragraphs), saves as WAV / MP3 / M4B. MP3 and M4B output get title/author/cover tags embedded via mutagen. With chapter markers enabled and a TOC available, the file gets ID3v2 CHAP frames (MP3) or MP4 chapter atoms (M4B, written via an ffmpeg remux).
 
 ## Chapter Markers
 
-When generating MP3 output, TwinkTalks can embed chapter markers that let you jump between sections in your audio player.
+When generating MP3 or M4B output, TwinkTalks can embed chapter markers that let you jump between sections in your audio player.
 
 **How it works:**
-1. Text is extracted per-page (preserving page numbers)
-2. Each chunk records which page it came from (`source_page`)
-3. After synthesis, chunk timing offsets are computed (accounting for inter-sentence/paragraph silence)
-4. TOC chapters are mapped to audio timestamps via page ranges
-5. ID3v2 CHAP frames + CTOC table of contents frame are written to the MP3 file using mutagen
+1. Text is extracted per-page (preserving page numbers).
+2. Each chunk records which page it came from (`source_page`).
+3. After synthesis, chunk timing offsets are computed (accounting for inter-sentence/paragraph silence).
+4. TOC chapters are mapped to audio timestamps via page ranges.
+5. The audio file is tagged: ID3v2 CHAP + CTOC frames for MP3 (via mutagen), or MP4 chapter atoms for M4B (via an ffmpeg remux with an ffmetadata sidecar).
 
 **CLI:**
 ```bash
 python -m twinktalks textbook.pdf --chapter-markers -o textbook.mp3
+python -m twinktalks textbook.pdf --chapter-markers -o textbook.m4b
+python -m twinktalks textbook.pdf --chapters all --merge-chapters -o book.m4b   # one merged audiobook
 ```
 
-**Web UI:** Select "MP3" format — chapter markers are embedded automatically when the file has a detected TOC.
+**Web UI:** the *Chapter markers* toggle in the Settings list controls embedding; it applies to MP3 and M4B output whenever the source has a detected TOC.
 
-**Supported players:** VLC, Apple Podcasts, Overcast, Pocket Casts, most podcast apps, and any player supporting ID3v2 chapter frames.
+**Supported players:** VLC, Apple Podcasts, Overcast, Pocket Casts, iOS Books (M4B), and any player supporting ID3v2 / MP4 chapter frames.
 
 ## Voice Presets
 
@@ -205,46 +207,47 @@ python -m twinktalks textbook.pdf --chapter-markers -o textbook.mp3
 | Fast Summary | Ryan | 1.3x | Speak quickly and concisely... |
 | Whisper | Aria | 0.8x | Speak in a soft, intimate whisper... |
 
-**Custom presets:** Save your own speaker + speed + instruct combos in the web UI (VOICE STYLE → SAVE AS) or manage them directly in `~/.twinktalks/presets.json`. User presets appear with a `*` prefix in the dropdown.
+**Custom presets:** save your own speaker + speed + instruct combos via the *Voice style* row in the web UI (open the row → type a name into *Save current as…* → click Save), or manage them directly in `~/.twinktalks/presets.json`. User presets appear with a ★ prefix in the dropdown and can be deleted with the × button.
 
 ## Project Structure
 
 ```
 twinktalks/
-├── config.py             # All constants: model ID, speaker, chunking, audio, speed, sessions
-├── extractor.py          # File type router — dispatches to PDF/EPUB extractor by extension
-├── pdf_extractor.py      # pdfplumber (layout=True) + PyMuPDF fallback, table skipping, per-page extraction
+├── config.py             # All constants: model ID, speakers, chunking, audio; auto device/dtype detection
+├── extractor.py          # File type router — dispatches to per-format extractor by extension
+├── pdf_extractor.py      # pdfplumber (layout=True) + PyMuPDF fallback, table skipping, per-page, OCR hook
 ├── epub_extractor.py     # ebooklib + BeautifulSoup, spine-based chapter navigation, per-item extraction
-├── text_preprocessor.py  # Remove citations, expand abbreviations, truncate at references
-├── chunker.py            # Split into ~500 char chunks at sentence boundaries (NLTK), page-aware chunking
-├── tts_engine.py         # Qwen3-TTS wrapper — MPS/SDPA/float16, streaming + batch synthesis
-├── audio_utils.py        # Concatenate waveforms, silence gaps, WAV/MP3 export, chapter markers (ID3v2)
-├── toc.py                # TOC extraction (PyMuPDF get_toc()), Chapter dataclass
-├── session.py            # SessionManager — per-chunk WAV saving, resume support
-├── presets.py            # Built-in voice presets + user favorites (~/.twinktalks/presets.json)
-├── text_extractor.py     # Plain text and Markdown (with markup stripping + heading TOC)
+├── text_extractor.py     # Plain text and Markdown (markup stripping + heading TOC)
 ├── html_extractor.py     # Standalone HTML files (BeautifulSoup, h1-h3 TOC)
-├── ocr.py                # ocrmypdf wrapper for scanned PDF preprocessing
+├── ocr.py                # ocrmypdf wrapper for scanned PDF preprocessing (auto language pick)
+├── text_preprocessor.py  # Remove citations, expand abbreviations, truncate at references
+├── chunker.py            # ~500 char chunks at sentence boundaries (NLTK), page-aware + cross-page stitching
+├── tts_engine.py         # Qwen3-TTS wrapper — MPS/SDPA/float16, streaming + batch synthesis
+├── audio_utils.py        # Concat + silence gaps, WAV/MP3/M4B export, ID3v2 + MP4 chapter markers, metadata embed
+├── toc.py                # TOC extraction (PyMuPDF get_toc()), Chapter dataclass
+├── session.py            # SessionManager — per-chunk WAV saving, CLI resume support
+├── presets.py            # Built-in voice presets + user favorites (~/.twinktalks/presets.json)
 ├── book_metadata.py      # Extract title/author/cover from PDF (fitz) and EPUB (DC metadata)
 ├── language_detect.py    # langdetect → Qwen3-TTS language name mapping
-├── cli.py                # CLI with batch + merge-chapters, preview, OCR, chapter markers
+├── cli.py                # CLI with batch + merge-chapters, preview, OCR, chapter markers, sessions
 ├── api.py                # FastAPI app — entry point for `twinktalks-server`
 └── api_routes/
     ├── static_data.py    # Voices, languages, formats, presets endpoints
     ├── files.py          # Upload + metadata + preview endpoints
-    ├── jobs.py           # Synthesis jobs with SSE progress streaming
-    └── library.py        # Previously generated audiobooks
+    ├── jobs.py           # Synthesis jobs with SSE progress streaming + voice preview
+    └── library.py        # Previously generated audiobooks (~/.twinktalks/library/)
 
 frontend/
 ├── package.json
 ├── vite.config.ts        # Dev server proxies /api → :7860
 ├── index.html            # Geist + Geist Mono via Google Fonts
 └── src/
-    ├── App.tsx           # Top-level state: file, settings, job, library
+    ├── App.tsx           # Top-level state: file, settings, job, library, presets
     ├── main.tsx
     ├── api/client.ts     # Typed fetch wrappers for every backend endpoint
     ├── components/       # Topbar, Hero, Dropzone, FileCard, VoicePicker,
-    │                     # SettingsList, GenerateButton, ActiveJob, Library
+    │                     # VoiceStyleControls, SettingsList, GenerateButton,
+    │                     # ActiveJob, Library
     ├── hooks/useTheme.ts # light/dark toggle, persisted to localStorage
     ├── styles/           # Design tokens + base.css
     └── types.ts          # TypeScript shapes shared with the API

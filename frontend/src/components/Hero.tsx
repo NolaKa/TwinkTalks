@@ -17,7 +17,7 @@ export function Hero() {
         Turn your reading list into <span style={{ color: 'var(--dim)' }}>an audiobook.</span>
       </h1>
       <p style={{ marginTop: 16, fontSize: 16, color: 'var(--dim)', maxWidth: 540 }}>
-        Drop a PDF or EPUB. Pick a voice. Get a clean audio file with chapter markers, ready for any player.
+        Drop a PDF, EPUB, Markdown, or HTML file. Pick a voice. Get a clean audio file with chapter markers, ready for any player.
       </p>
     </div>
   )
