@@ -28,6 +28,7 @@ export type FileMetadata = {
   title: string | null
   author: string | null
   has_cover: boolean
+  needs_ocr: boolean
   toc: ChapterOut[]
 }
 
@@ -52,6 +53,9 @@ export type ActiveJobInfo = {
   duration_s: number
   eta_s: number
   filename: string
+  // Phase: 'loading_model' (waiting for Qwen weights) or 'synthesizing' (chunks rolling)
+  phase?: 'loading_model' | 'synthesizing'
+  model_needs_download?: boolean
 }
 
 export type Preset = {

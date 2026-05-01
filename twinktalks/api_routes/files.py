@@ -16,6 +16,7 @@ from twinktalks.extractor import (
     extract_toc,
     get_item_count,
 )
+from twinktalks.pdf_extractor import ExtractionError
 from twinktalks.text_preprocessor import preprocess
 from twinktalks.toc import Chapter
 
@@ -39,6 +40,7 @@ class StoredFile:
     cover_image: bytes | None = None
     cover_mime: str | None = None
     toc: list[Chapter] = field(default_factory=list)
+    needs_ocr: bool = False  # PDF couldn't be extracted (likely scanned)
     # Cached on first preview to avoid re-extracting on every UI call.
     _cached_text: str | None = None
 
@@ -70,6 +72,7 @@ class FileMetadata(BaseModel):
     title: str | None = None
     author: str | None = None
     has_cover: bool = False
+    needs_ocr: bool = False  # heuristic: PDF has no extractable text layer
     toc: list[ChapterOut] = []
 
 
@@ -85,6 +88,7 @@ def _to_metadata(stored: StoredFile, word_count: int) -> FileMetadata:
         title=stored.title,
         author=stored.author,
         has_cover=stored.cover_image is not None,
+        needs_ocr=stored.needs_ocr,
         toc=[
             ChapterOut(title=c.title, level=c.level, start=c.start_page, end=c.end_page)
             for c in stored.toc
@@ -158,12 +162,22 @@ async def upload(file: UploadFile = File(...)) -> FileMetadata:
     _STORE[file_id] = stored
 
     # Eagerly extract text so the FileCard can show real word count + duration.
+    # If extraction fails the way scanned PDFs fail, mark the file as needing OCR
+    # so the UI can flip it on automatically — the user shouldn't have to know
+    # about Tesseract.
+    word_count = 0
     try:
         text = _ensure_text(stored)
         word_count = len(text.split())
+    except ExtractionError as e:
+        msg = str(e).lower()
+        if ext == ".pdf" and ("image-based" in msg or "scanned" in msg or "no text" in msg):
+            stored.needs_ocr = True
+            logger.info("Marking %s as needs_ocr=True (no text layer)", target.name)
+        else:
+            logger.warning("Initial extraction failed for %s: %s", target.name, e)
     except Exception as e:
         logger.warning("Initial extraction failed for %s: %s", target.name, e)
-        word_count = 0
 
     return _to_metadata(stored, word_count)
 

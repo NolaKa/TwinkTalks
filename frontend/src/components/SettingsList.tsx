@@ -1,4 +1,5 @@
 import type { Format, Language, Settings } from '../types'
+import { Tooltip } from './Tooltip'
 
 type Props = {
   settings: Settings
@@ -14,6 +15,27 @@ const FORMATS: Array<{ id: Format; label: string }> = [
   { id: 'm4b', label: 'M4B' },
 ]
 
+const TIPS = {
+  language:
+    "Pick the language the document is written in, or leave Auto and TwinkTalks will detect it from the first few hundred characters.",
+  speed:
+    "Speaking rate. 1.00× is normal pace. 0.85× is good for dense academic text; 1.20× shaves time off podcast-style content.",
+  format:
+    "WAV is uncompressed (largest file). MP3 is the universal podcast format with chapter markers. M4B is the audiobook container that iOS Books and Apple Podcasts treat as a real audiobook.",
+  chapter_markers:
+    "Embed jump-to-chapter points based on the document's table of contents. Works in MP3 (ID3v2) and M4B (MP4 chapter atoms). Has no effect for documents without a TOC.",
+  merge_chapters:
+    "When ON, every chapter from the table of contents is rendered into one combined audiobook file. When OFF (and you use the CLI's --chapters all), each chapter becomes its own file.",
+  skip_references:
+    "Drop the References / Bibliography section so the narration ends with the actual content instead of two hundred citations.",
+  skip_tables:
+    "Detect and skip tables, figures, and diagram captions — useful for textbooks where tables don't read well as speech.",
+  force_ocr:
+    "Force OCR on every PDF, including ones that already have a text layer. Normally TwinkTalks decides automatically based on whether text can be extracted.",
+  ocr_language:
+    "Tesseract language pack(s) for OCR. 'auto' joins every pack you have installed via brew tesseract-lang. Override with codes like 'eng', 'pol', 'eng+jpn'.",
+}
+
 export function SettingsList(props: Props) {
   const { settings, onChange, languages, advancedOpen, onToggleAdvanced } = props
 
@@ -26,7 +48,7 @@ export function SettingsList(props: Props) {
         overflow: 'hidden',
       }}
     >
-      <Row label="Language">
+      <Row label="Language" tip={TIPS.language}>
         <select
           value={settings.language}
           onChange={e => onChange({ language: e.target.value })}
@@ -38,7 +60,7 @@ export function SettingsList(props: Props) {
         </select>
       </Row>
 
-      <Row label="Speed">
+      <Row label="Speed" tip={TIPS.speed}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 180 }}>
           <input
             type="range"
@@ -55,7 +77,7 @@ export function SettingsList(props: Props) {
         </div>
       </Row>
 
-      <Row label="Format">
+      <Row label="Format" tip={TIPS.format}>
         <div
           style={{
             display: 'inline-flex',
@@ -92,13 +114,9 @@ export function SettingsList(props: Props) {
 
       <ToggleRow
         label="Chapter markers"
+        tip={TIPS.chapter_markers}
         on={settings.chapter_markers}
         onChange={() => onChange({ chapter_markers: !settings.chapter_markers })}
-      />
-      <ToggleRow
-        label="OCR fallback"
-        on={settings.ocr}
-        onChange={() => onChange({ ocr: !settings.ocr })}
         last
       />
 
@@ -117,7 +135,7 @@ export function SettingsList(props: Props) {
           fontFamily: 'inherit',
         }}
       >
-        {advancedOpen ? '−' : '+'} Advanced (OCR language, skip rules, merge chapters)
+        {advancedOpen ? '−' : '+'} Advanced (skip rules, OCR, merge chapters)
       </button>
 
       {advancedOpen && (
@@ -127,10 +145,34 @@ export function SettingsList(props: Props) {
             borderTop: '1px solid var(--line)',
             display: 'flex',
             flexDirection: 'column',
-            gap: 16,
+            gap: 14,
           }}
         >
-          <Field label="OCR language">
+          <CheckboxRow
+            label="Skip references / bibliography"
+            tip={TIPS.skip_references}
+            checked={settings.skip_references}
+            onChange={v => onChange({ skip_references: v })}
+          />
+          <CheckboxRow
+            label="Skip tables and diagrams"
+            tip={TIPS.skip_tables}
+            checked={settings.skip_tables}
+            onChange={v => onChange({ skip_tables: v })}
+          />
+          <CheckboxRow
+            label="Combine chapters into a single audiobook file"
+            tip={TIPS.merge_chapters}
+            checked={settings.merge_chapters}
+            onChange={v => onChange({ merge_chapters: v })}
+          />
+          <CheckboxRow
+            label="Force OCR on every PDF"
+            tip={TIPS.force_ocr}
+            checked={settings.ocr}
+            onChange={v => onChange({ ocr: v })}
+          />
+          <Field label="OCR language" tip={TIPS.ocr_language}>
             <input
               type="text"
               value={settings.ocr_language}
@@ -139,22 +181,6 @@ export function SettingsList(props: Props) {
               style={inputStyle}
             />
           </Field>
-
-          <CheckboxRow
-            label="Skip references / bibliography"
-            checked={settings.skip_references}
-            onChange={v => onChange({ skip_references: v })}
-          />
-          <CheckboxRow
-            label="Skip tables"
-            checked={settings.skip_tables}
-            onChange={v => onChange({ skip_tables: v })}
-          />
-          <CheckboxRow
-            label="Merge all chapters into one audiobook"
-            checked={settings.merge_chapters}
-            onChange={v => onChange({ merge_chapters: v })}
-          />
         </div>
       )}
     </div>
@@ -164,8 +190,13 @@ export function SettingsList(props: Props) {
 // --- Row primitives ----------------------------------------------------------
 
 function Row({
-  label, children, last,
-}: { label: string; children: React.ReactNode; last?: boolean }) {
+  label, tip, children, last,
+}: {
+  label: string
+  tip?: string
+  children: React.ReactNode
+  last?: boolean
+}) {
   return (
     <div
       style={{
@@ -177,64 +208,81 @@ function Row({
         gap: 12,
       }}
     >
-      <span style={{ fontSize: 13, color: 'var(--ink)' }}>{label}</span>
+      <span style={{ fontSize: 13, color: 'var(--ink)', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+        {label}
+        {tip && <Tooltip text={tip} />}
+      </span>
       {children}
     </div>
   )
 }
 
 function ToggleRow({
-  label, on, onChange, last,
-}: { label: string; on: boolean; onChange: () => void; last?: boolean }) {
+  label, tip, on, onChange, last,
+}: {
+  label: string
+  tip?: string
+  on: boolean
+  onChange: () => void
+  last?: boolean
+}) {
   return (
-    <button
-      onClick={onChange}
+    <div
       style={{
-        width: '100%',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
         padding: '14px 16px',
         borderBottom: last ? 'none' : '1px solid var(--line)',
-        border: 'none',
-        background: 'transparent',
-        color: 'var(--ink)',
-        fontFamily: 'inherit',
-        fontSize: 13,
-        cursor: 'pointer',
-        textAlign: 'left',
       }}
     >
-      <span>{label}</span>
-      <span
+      <span style={{ fontSize: 13, color: 'var(--ink)', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+        {label}
+        {tip && <Tooltip text={tip} />}
+      </span>
+      <button
+        onClick={onChange}
         style={{
-          fontSize: 13,
+          border: 'none',
+          background: 'transparent',
           color: on ? 'var(--ink)' : 'var(--dim)',
           fontWeight: on ? 500 : 400,
+          fontSize: 13,
+          cursor: 'pointer',
+          fontFamily: 'inherit',
+          padding: 0,
         }}
       >
         {on ? 'On' : 'Off'}
-      </span>
-    </button>
+      </button>
+    </div>
   )
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({
+  label, tip, children,
+}: { label: string; tip?: string; children: React.ReactNode }) {
   return (
     <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-      <span style={{ fontSize: 12, color: 'var(--dim)' }}>{label}</span>
+      <span style={{ fontSize: 12, color: 'var(--dim)', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+        {label}
+        {tip && <Tooltip text={tip} />}
+      </span>
       {children}
     </label>
   )
 }
 
 function CheckboxRow({
-  label, checked, onChange,
-}: { label: string; checked: boolean; onChange: (v: boolean) => void }) {
+  label, tip, checked, onChange,
+}: { label: string; tip?: string; checked: boolean; onChange: (v: boolean) => void }) {
   return (
     <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, cursor: 'pointer' }}>
       <input type="checkbox" checked={checked} onChange={e => onChange(e.target.checked)} />
-      {label}
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+        {label}
+        {tip && <Tooltip text={tip} />}
+      </span>
     </label>
   )
 }

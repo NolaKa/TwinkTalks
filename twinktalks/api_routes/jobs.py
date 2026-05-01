@@ -50,6 +50,27 @@ def _get_engine():
     return _ENGINE
 
 
+def _model_is_cached() -> bool:
+    """Best-effort check whether Qwen3-TTS weights are already on disk.
+
+    Returns False if the next load would have to fetch ~3.5 GB from the network.
+    """
+    custom = os.environ.get("TWINKTALKS_MODEL_PATH")
+    if custom:
+        return Path(custom).expanduser().is_dir()
+    hf_cache = Path.home() / ".cache" / "huggingface" / "hub"
+    if (hf_cache / "models--Qwen--Qwen3-TTS-12Hz-1.7B-CustomVoice").exists():
+        return True
+    ms_cache = Path.home() / ".cache" / "modelscope" / "hub"
+    if (ms_cache / "Qwen" / "Qwen3-TTS-12Hz-1.7B-CustomVoice").exists():
+        return True
+    return False
+
+
+def _model_loaded_in_memory() -> bool:
+    return _ENGINE is not None and _ENGINE.model is not None
+
+
 class JobRequest(BaseModel):
     file_id: str
     voice_id: str = "aiden"
@@ -151,11 +172,19 @@ def _run_synthesis(job: Job) -> None:
         resolved_language = resolve_language(s["language"], text)
         speaker = resolve_voice_to_speaker(s["voice_id"])
 
+        # Tell the UI whether we're about to download or just load — so the
+        # user understands why the first generate may take 5+ minutes.
+        if not _model_loaded_in_memory():
+            _emit(job, "model_loading", {
+                "needs_download": not _model_is_cached(),
+            })
+
         engine = _get_engine()
         start_time = time.time()
         final_offsets = None
         sample_rate = None
         cumulative = None
+        model_load_announced = _model_loaded_in_memory()
 
         for cumulative, sample_rate, current, total, offsets in engine.synthesize_chunks_streaming(
             chunks,
@@ -168,6 +197,13 @@ def _run_synthesis(job: Job) -> None:
                 job.status = "cancelled"
                 _emit(job, "cancelled")
                 return
+
+            if not model_load_announced:
+                # First iteration means the model finished loading and the first
+                # chunk has been synthesized.
+                _emit(job, "model_loaded", {})
+                model_load_announced = True
+                start_time = time.time()  # don't count load time in ETA
 
             elapsed = time.time() - start_time
             avg = elapsed / current if current else 0

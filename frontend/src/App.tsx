@@ -28,6 +28,9 @@ const DEFAULT_SETTINGS: Settings = {
   merge_chapters: false,
 }
 
+/** Heuristic count: a "short" file probably wants MP3, no merging. */
+const SHORT_DOC_CHARS = 5000
+
 export function App() {
   const [theme, setTheme] = useTheme()
 
@@ -38,6 +41,9 @@ export function App() {
 
   const [file, setFile] = useState<FileMetadata | null>(null)
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS)
+  // Track whether the user has manually touched format / merge / ocr so we
+  // don't override their choice when applying smart defaults from a new file.
+  const userTouched = useRef<Set<keyof Settings>>(new Set())
   const [advancedOpen, setAdvancedOpen] = useState(false)
   const [saveName, setSaveName] = useState('')
   const [activeJob, setActiveJob] = useState<ActiveJobInfo | null>(null)
@@ -46,7 +52,7 @@ export function App() {
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const eventSourceRef = useRef<EventSource | null>(null)
 
-  // Boot: load static data + library
+  // Boot
   useEffect(() => {
     api.voices().then(setVoices).catch(e => setError(String(e)))
     api.languages().then(setLanguages).catch(() => {})
@@ -56,6 +62,34 @@ export function App() {
 
   useEffect(() => () => eventSourceRef.current?.close(), [])
 
+  /** Apply heuristic defaults the user hasn't manually overridden. */
+  const applySmartDefaults = useCallback((meta: FileMetadata) => {
+    setSettings(prev => {
+      const next = { ...prev }
+      const hasToc = meta.toc.length > 0
+      const looksShort =
+        meta.word_count > 0 && meta.word_count * 6 < SHORT_DOC_CHARS
+
+      if (!userTouched.current.has('format')) {
+        next.format = hasToc && !looksShort ? 'm4b' : 'mp3'
+      }
+      if (!userTouched.current.has('merge_chapters')) {
+        next.merge_chapters = hasToc && !looksShort
+      }
+      if (!userTouched.current.has('ocr')) {
+        next.ocr = meta.needs_ocr
+      }
+      return next
+    })
+  }, [])
+
+  const updateSettings = useCallback((patch: Partial<Settings>) => {
+    for (const key of Object.keys(patch) as (keyof Settings)[]) {
+      userTouched.current.add(key)
+    }
+    setSettings(prev => ({ ...prev, ...patch }))
+  }, [])
+
   const handleUpload = useCallback(async (raw: File) => {
     setError(null)
     setBusy(true)
@@ -63,23 +97,22 @@ export function App() {
       if (file) await api.deleteFile(file.id).catch(() => {})
       const meta = await api.uploadFile(raw)
       setFile(meta)
+      applySmartDefaults(meta)
     } catch (e) {
       setError(String(e))
     } finally {
       setBusy(false)
     }
-  }, [file])
+  }, [file, applySmartDefaults])
 
   const handleReplace = useCallback(async () => {
     if (file) {
       api.deleteFile(file.id).catch(() => {})
       setFile(null)
+      // Reset "touched" so next file's smart defaults apply cleanly.
+      userTouched.current.clear()
     }
   }, [file])
-
-  const updateSettings = useCallback((patch: Partial<Settings>) => {
-    setSettings(prev => ({ ...prev, ...patch }))
-  }, [])
 
   const handleApplyPreset = useCallback((preset: Preset) => {
     const matching = voices.find(v => v.speaker === preset.speaker)
@@ -89,6 +122,9 @@ export function App() {
       speed: preset.speed,
       instruct: preset.instruct,
     }))
+    userTouched.current.add('speed')
+    userTouched.current.add('instruct')
+    userTouched.current.add('voice_id')
   }, [voices])
 
   const handleSavePreset = useCallback(async (name: string) => {
@@ -96,10 +132,8 @@ export function App() {
     if (!v) return
     try {
       await api.savePreset({
-        name,
-        speaker: v.speaker,
-        speed: settings.speed,
-        instruct: settings.instruct,
+        name, speaker: v.speaker,
+        speed: settings.speed, instruct: settings.instruct,
       })
       const fresh = await api.presets()
       setPresets(fresh)
@@ -136,12 +170,27 @@ export function App() {
         duration_s: 0,
         eta_s: 0,
         filename: file.title || file.name,
+        phase: 'synthesizing',
+      })
+
+      es.addEventListener('model_loading', (ev: MessageEvent) => {
+        const data = ev.data ? JSON.parse(ev.data) : {}
+        setActiveJob(prev => prev && {
+          ...prev,
+          phase: 'loading_model',
+          model_needs_download: !!data.needs_download,
+        })
+      })
+
+      es.addEventListener('model_loaded', () => {
+        setActiveJob(prev => prev && { ...prev, phase: 'synthesizing' })
       })
 
       es.addEventListener('progress', (ev: MessageEvent) => {
         const data = JSON.parse(ev.data)
         setActiveJob(prev => prev && {
           ...prev,
+          phase: 'synthesizing',
           current: data.current,
           total: data.total,
           duration_s: data.duration_s,
@@ -201,7 +250,12 @@ export function App() {
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 360px', gap: 32 }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
             {file ? (
-              <FileCard file={file} onReplace={handleReplace} />
+              <>
+                <FileCard file={file} onReplace={handleReplace} />
+                {file.needs_ocr && (
+                  <ScannedNotice forced={settings.ocr && !file.needs_ocr} />
+                )}
+              </>
             ) : (
               <Dropzone onPick={handleUpload} />
             )}
@@ -252,9 +306,6 @@ export function App() {
 
             <audio ref={audioRef} controls style={{ width: '100%' }} />
 
-            {/* Sticky-bottom Generate: floats 24px above the viewport bottom
-                while there's still content to scroll past, then settles into
-                its natural position once the bottom of the form is reached. */}
             <div style={{ position: 'sticky', bottom: 24, zIndex: 5 }}>
               <GenerateButton
                 onClick={handleGenerate}
@@ -276,5 +327,48 @@ export function App() {
         </div>
       </main>
     </>
+  )
+}
+
+function ScannedNotice({ forced }: { forced: boolean }) {
+  return (
+    <div
+      style={{
+        border: '1px solid var(--line)',
+        borderRadius: 12,
+        background: 'color-mix(in srgb, var(--accent) 6%, var(--bg))',
+        padding: '12px 14px',
+        display: 'flex',
+        alignItems: 'flex-start',
+        gap: 10,
+        fontSize: 12.5,
+        lineHeight: 1.5,
+        color: 'var(--ink)',
+      }}
+    >
+      <span
+        aria-hidden
+        style={{
+          flexShrink: 0,
+          width: 18,
+          height: 18,
+          borderRadius: '50%',
+          background: 'var(--accent)',
+          color: '#fff',
+          fontSize: 11,
+          fontWeight: 600,
+          display: 'grid',
+          placeItems: 'center',
+          marginTop: 1,
+        }}
+      >
+        i
+      </span>
+      <span>
+        <strong>This PDF looks scanned.</strong> No text layer was found — TwinkTalks will run OCR
+        (Tesseract) before generating audio. {forced ? '' : 'You can disable this in Advanced if the heuristic is wrong.'}{' '}
+        Make sure <code style={{ fontFamily: 'var(--font-mono)' }}>ocrmypdf</code> + <code style={{ fontFamily: 'var(--font-mono)' }}>tesseract</code> are installed (<code style={{ fontFamily: 'var(--font-mono)' }}>brew install tesseract ghostscript qpdf && pip install ocrmypdf</code>).
+      </span>
+    </div>
   )
 }
