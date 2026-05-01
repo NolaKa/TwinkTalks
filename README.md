@@ -49,43 +49,96 @@ Convert academic papers, textbooks, e-books, notes, and web pages into natural-s
 
 ## TTS backends
 
-TwinkTalks ships two interchangeable backends. You pick at install time —
-the Python deps are mutually exclusive in a single venv:
+TwinkTalks runs on one of two TTS engines. **You pick which one when you install** — they can't share a Python virtualenv (the libraries pin conflicting versions of `numpy` / `transformers`).
 
-| | **Qwen3-TTS-1.7B** (default) | **Kokoro-82M** |
+|  | **Qwen3-TTS-1.7B** *(default)* | **Kokoro-82M** *(faster)* |
 |---|---|---|
-| Install | `pip install -e .` | `pip install -e .[kokoro]` |
-| Model size | ~3.5 GB | ~360 MB |
-| RAM | ~6–10 GB | ~1.5–2 GB |
-| Speed (M-series) | RTF ~0.5–1× | RTF ~0.05–0.1× (~10× faster) |
-| Languages | 10+ (auto-detect) | English only (American + British) |
-| Voice-style instruct | yes (natural-language prompts) | no |
-| Voices in UI | 9 (aiden, dylan, eric, ono_anna, ryan, serena, sohee, uncle_fu, vivian) | 9 of Kokoro's 50+ (af_heart, af_bella, am_adam, bm_george, …) |
+| **Install command** | `./setup.sh` | `./setup.sh --kokoro` |
+| **Model size on disk** | ~3.5 GB | ~360 MB |
+| **RAM during synthesis** | ~6–10 GB | ~1.5–2 GB |
+| **Speed (M-series Mac)** | ~1 hour audio in ~30–60 min | **~1 hour audio in ~5–6 min** |
+| **Languages** | 10+ with auto-detect | English only (American + British) |
+| **Voice-style prompts** ("speak calmly…") | ✓ | ✗ |
+| **Voices** | 9 (aiden, dylan, eric, ono_anna, ryan, serena, sohee, uncle_fu, vivian) | 9 (af_heart, af_bella, af_nicole, af_sky, am_adam, am_echo, am_michael, bf_alice, bm_george) |
 
-If you want both, use separate virtualenvs — `mlx-audio` upgrades transformers
-to 5.x which `qwen-tts` pins below. Pick a backend per session.
+### Which one should I pick?
 
-The web UI auto-detects which backend's deps are installed and shows its
-voice list. Use `TWINKTALKS_BACKEND=qwen` / `kokoro` to override the choice
-when you have one of each in different venvs.
+- **Use Kokoro** if your document is in English and you want it done fast, especially on a laptop with 8 GB of RAM. A 56-minute audiobook renders in under 6 minutes on an M-series 8 GB.
+- **Use Qwen** if your document is in Polish / German / French / Chinese / etc., or if you want to control the delivery with prompts like *"Speak calmly like an audiobook narrator"*. You'll need a Mac with at least 16 GB of RAM (32 GB comfortable) and patience — synthesis runs in real time give-or-take.
+
+The web UI shows whichever backend you installed; nothing to configure once setup is done.
 
 ## Quick Start
 
 ```bash
 git clone https://github.com/NolaKa/TwinkTalks.git
 cd TwinkTalks
-chmod +x setup.sh && ./setup.sh   # installs Python 3.12, Node, ffmpeg, Tesseract, builds the React frontend
-source .venv/bin/activate
+chmod +x setup.sh
 ```
 
-`setup.sh` is idempotent and installs everything it needs through Homebrew. The only prerequisite is [Homebrew](https://brew.sh/) itself; if it's missing the script prints the install command and exits.
+Now pick a backend and run setup:
 
-Or install as an editable package:
+**Qwen (default — multilingual, slower, more RAM):**
+```bash
+./setup.sh
+source .venv/bin/activate
+twinktalks-server          # → http://localhost:7860
+```
+
+**Kokoro (English only, much faster, low RAM):**
+```bash
+./setup.sh --kokoro
+source .venv/bin/activate
+twinktalks-server          # → http://localhost:7860
+```
+
+That's it. `setup.sh` is idempotent: it installs Homebrew dependencies (Python 3.12, Node, ffmpeg, Tesseract, ghostscript, qpdf), creates a Python virtualenv, installs the backend you chose, builds the React frontend, and prints next-step instructions. The only prerequisite is [Homebrew](https://brew.sh/) — if it's missing the script tells you the install command and exits.
+
+### Want both backends side by side?
+
+Use separate virtualenvs. They're cheap to create — each is ~1–2 GB of Python packages plus the model weights in `~/.twinktalks/cache/`:
+
+```bash
+./setup.sh --venv .venv-qwen           # Qwen in .venv-qwen
+./setup.sh --kokoro --venv .venv-kokoro  # Kokoro in .venv-kokoro
+```
+
+To switch:
+
+```bash
+deactivate                              # leave whichever venv is active
+source .venv-kokoro/bin/activate        # activate the other
+twinktalks-server
+```
+
+The web UI re-detects the active backend on startup, so the voice list, language list, and the visibility of the *Voice style* prompt box all adapt automatically. No config file, no env var.
+
+### Already installed Qwen and want to try Kokoro?
+
+You don't need to reinstall everything — just spin up a second venv:
+
+```bash
+./setup.sh --kokoro --venv .venv-kokoro
+deactivate
+source .venv-kokoro/bin/activate
+twinktalks-server
+```
+
+Switch back with `deactivate && source .venv/bin/activate`. The original `.venv` (Qwen) is untouched.
+
+### Manual install (no setup.sh)
+
+If you'd rather do it yourself:
 
 ```bash
 python3.12 -m venv .venv && source .venv/bin/activate
-pip install -e .
+
+# Pick ONE:
+pip install -e ".[qwen]"     # multilingual, slower
+pip install -e ".[kokoro]"   # English only, faster
+
 (cd frontend && npm install && npm run build)
+twinktalks-server
 ```
 
 ## Usage
@@ -100,7 +153,7 @@ twinktalks-server
 The interface is a React + Vite SPA served by FastAPI. It exposes:
 
 - **Drop zone / file card** — drag-and-drop or click to upload PDF, EPUB, Markdown, TXT, HTML. Once loaded, you see file size, page/chapter count, word count, and an estimated audio duration. Title and cover art come from the document's metadata.
-- **Voice picker** — a 3×3 grid of all nine Qwen3-TTS speakers (Aiden, Dylan, Eric, Anna, Ryan, Serena, Sohee, Uncle Fu, Vivian).
+- **Voice picker** — a 3×3 grid of the active backend's voices (9 Qwen speakers if you ran `./setup.sh`, 9 Kokoro voices if you ran `./setup.sh --kokoro`). The header above the grid tells you which backend is current.
 - **Voice style** — collapsible row right under the voice tiles. Click to expand a panel with a *built-in or saved* preset dropdown, a *Save current as…* input + button, an instruct textarea, and a list of your saved presets with ★ delete.
 - **Settings list** — Language (with `Auto`), Speed slider (0.5–2.0×), Format segmented (WAV/MP3/M4B), Chapter markers toggle, OCR fallback toggle.
 - **Advanced** (inside Settings list) — OCR language, *skip references*, *skip tables*, and *merge all chapters into one audiobook*.
