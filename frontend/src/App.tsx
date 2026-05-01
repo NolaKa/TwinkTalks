@@ -337,6 +337,27 @@ export function App() {
     setCurrentAudio({ url: entry.audio_url, name: entry.name })
   }, [])
 
+  const handleDelete = useCallback(async (entry: LibraryEntry) => {
+    const ok = window.confirm(
+      `Delete "${entry.title || entry.name}" from your library?\n\nThis removes the file from ~/Audiobooks/ — there's no undo.`
+    )
+    if (!ok) return
+    try {
+      await api.deleteLibraryEntry(entry.id)
+      setLibrary(prev => prev.filter(e => e.id !== entry.id))
+      // If the deleted file is what's currently in the audio element, clear it.
+      if (currentAudio?.url === entry.audio_url) {
+        setCurrentAudio(null)
+        if (audioRef.current) {
+          audioRef.current.removeAttribute('src')
+          audioRef.current.load()
+        }
+      }
+    } catch (e) {
+      setError(prettyError(e))
+    }
+  }, [currentAudio])
+
   return (
     <>
       <main style={{ maxWidth: 1080, margin: '0 auto', padding: '56px 32px 80px' }}>
@@ -488,7 +509,7 @@ export function App() {
           <aside>
             <div style={{ position: 'sticky', top: 32, display: 'flex', flexDirection: 'column', gap: 16 }}>
               <ActiveJob job={activeJob} />
-              <Library entries={library} onPlay={handlePlay} />
+              <Library entries={library} onPlay={handlePlay} onDelete={handleDelete} />
               <div style={{ fontSize: 11, color: 'var(--dim-2)', padding: '0 4px', lineHeight: 1.5 }}>
                 Local-first. Audio is processed on this machine; nothing is uploaded.
               </div>
@@ -506,7 +527,7 @@ function backendSubtitle(b: BackendInfo | null, voiceCount: number): string {
     return `${voiceCount} voices from Qwen3-TTS — multilingual, supports voice-style prompts.`
   }
   if (b.name === 'kokoro') {
-    return `${voiceCount} Kokoro-82M voices — English only, ~10× faster than Qwen.`
+    return `${voiceCount} Kokoro-82M voices across 9 languages — ~10× faster than Qwen, no voice-style prompts.`
   }
   return `${voiceCount} voices`
 }

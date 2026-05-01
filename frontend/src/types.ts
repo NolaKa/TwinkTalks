@@ -11,6 +11,9 @@ export type Voice = {
   speaker: string
   tag: string
   avatarColor: string
+  /** Filled in for Kokoro voices; empty for Qwen. Used by the picker filter UI. */
+  language?: string
+  gender?: 'Female' | 'Male' | ''
 }
 
 export type BackendInfo = {

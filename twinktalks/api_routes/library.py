@@ -16,7 +16,8 @@ _MEDIA_TYPE = {".wav": "audio/wav", ".mp3": "audio/mpeg", ".m4b": "audio/mp4"}
 
 
 def _library_dir() -> Path:
-    d = Path.home() / ".twinktalks" / "library"
+    # Mirror the location used by jobs._library_dir(); migration happens there.
+    d = Path.home() / "Audiobooks"
     d.mkdir(parents=True, exist_ok=True)
     return d
 

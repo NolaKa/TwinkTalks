@@ -23,18 +23,36 @@ logger = logging.getLogger(__name__)
 # Repo on the HuggingFace Hub. mlx-audio's load_model takes the same identifier.
 KOKORO_MODEL_ID = "mlx-community/Kokoro-82M-bf16"
 
-# Subset of the 50+ Kokoro voices — mix of American + British, female + male.
-# Voice id prefix encodes both: a/b = American/British, f/m = female/male.
+# All Kokoro-82M-bf16 voices we know about. Voice id encodes language + gender:
+#   first letter  → language (a=AmE, b=BrE, e=Spanish, f=French, h=Hindi,
+#                   i=Italian, j=Japanese, p=Portuguese, z=Mandarin)
+#   second letter → gender (f=female, m=male)
+#   _suffix       → the speaker's name
+# lang_code passed to model.generate is just voice_id[0].
 _VOICES = [
-    "af_heart",   # American female
-    "af_bella",
-    "af_nicole",
-    "af_sky",
-    "am_adam",    # American male
-    "am_echo",
-    "am_michael",
-    "bf_alice",   # British female
-    "bm_george",  # British male
+    # American English
+    "af_alloy", "af_aoede", "af_bella", "af_heart", "af_jessica",
+    "af_kore", "af_nicole", "af_nova", "af_river", "af_sarah", "af_sky",
+    "am_adam", "am_echo", "am_eric", "am_fenrir", "am_liam",
+    "am_michael", "am_onyx", "am_puck", "am_santa",
+    # British English
+    "bf_alice", "bf_emma", "bf_isabella", "bf_lily",
+    "bm_daniel", "bm_fable", "bm_george", "bm_lewis",
+    # Spanish
+    "ef_dora", "em_alex", "em_santa",
+    # French
+    "ff_siwis",
+    # Hindi
+    "hf_alpha", "hf_beta", "hm_omega", "hm_psi",
+    # Italian
+    "if_sara", "im_nicola",
+    # Japanese
+    "jf_alpha", "jf_gongitsune", "jf_nezumi", "jf_tebukuro", "jm_kumo",
+    # Portuguese (Brazilian)
+    "pf_dora", "pm_alex", "pm_santa",
+    # Mandarin
+    "zf_xiaobei", "zf_xiaoni", "zf_xiaoxiao", "zf_xiaoyi",
+    "zm_yunjian", "zm_yunxi", "zm_yunxia", "zm_yunyang",
 ]
 
 
@@ -42,7 +60,7 @@ class KokoroBackend(TTSBackend):
     name = "kokoro"
     voices = list(_VOICES)
     default_voice = "af_heart"
-    supported_languages = ["English"]  # Kokoro is English-only.
+    supported_languages = ["English"]  # tied to voice — UI hides this dropdown.
     default_language = "English"
     supports_instruct = False
     sample_rate = 24000
@@ -92,8 +110,10 @@ class KokoroBackend(TTSBackend):
         if self.model is None:
             self.load_model()
         v = voice or self.default_voice
-        # Voice prefix encodes language variant: bf_/bm_ → British, else American.
-        lang_code = "b" if v.startswith(("bf_", "bm_")) else "a"
+        # First letter of voice id is the Kokoro lang_code:
+        # a=American, b=British, e=Spanish, f=French, h=Hindi, i=Italian,
+        # j=Japanese, p=Portuguese, z=Mandarin.
+        lang_code = v[0] if v and v[0] in "abefhijpz" else "a"
         try:
             chunks = []
             for result in self.model.generate(

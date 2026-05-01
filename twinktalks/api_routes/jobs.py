@@ -119,8 +119,26 @@ class JobCreated(BaseModel):
 
 
 def _library_dir() -> Path:
-    d = Path.home() / ".twinktalks" / "library"
+    """The visible audiobook output folder. Lives at ~/Audiobooks/ (NOT
+    hidden) so users can find their files in Finder. We migrate any
+    leftovers from the old hidden location once on first call."""
+    d = Path.home() / "Audiobooks"
     d.mkdir(parents=True, exist_ok=True)
+
+    legacy = Path.home() / ".twinktalks" / "library"
+    if legacy.exists():
+        for f in legacy.iterdir():
+            if f.is_file():
+                target = d / f.name
+                if not target.exists():
+                    try:
+                        f.rename(target)
+                    except OSError:
+                        pass
+        try:
+            legacy.rmdir()  # only if empty after migration
+        except OSError:
+            pass
     return d
 
 

@@ -17,11 +17,9 @@ from twinktalks.presets import (
 router = APIRouter(tags=["static"])
 
 
-# Display metadata layered onto each backend's raw voice IDs. id == speaker —
-# the model receives exactly what the UI shows, so there's no translation
-# table that can drift.
+# Hand-tuned overrides for Qwen voices (and any Kokoro voice we want named
+# differently than the auto-derived display).
 _VOICE_META: dict[str, dict] = {
-    # Qwen
     "aiden":    {"name": "Aiden",    "tag": "Warm",      "avatarColor": "#e5b8a3"},
     "dylan":    {"name": "Dylan",    "tag": "Deep",      "avatarColor": "#a3b3d4"},
     "eric":     {"name": "Eric",     "tag": "Bright",    "avatarColor": "#f4d8b3"},
@@ -31,27 +29,74 @@ _VOICE_META: dict[str, dict] = {
     "sohee":    {"name": "Sohee",    "tag": "Whisper",   "avatarColor": "#e0d4a3"},
     "uncle_fu": {"name": "Uncle Fu", "tag": "Mature",    "avatarColor": "#c5d4f0"},
     "vivian":   {"name": "Vivian",   "tag": "Lively",    "avatarColor": "#f0c6e0"},
-    # Kokoro — voice id encodes (a)merican/(b)ritish + (f)emale/(m)ale.
-    "af_heart":   {"name": "Heart",   "tag": "AmFemale", "avatarColor": "#fbcfe8"},
-    "af_bella":   {"name": "Bella",   "tag": "AmFemale", "avatarColor": "#fde68a"},
-    "af_nicole":  {"name": "Nicole",  "tag": "AmFemale", "avatarColor": "#bbf7d0"},
-    "af_sky":     {"name": "Sky",     "tag": "AmFemale", "avatarColor": "#bfdbfe"},
-    "am_adam":    {"name": "Adam",    "tag": "AmMale",   "avatarColor": "#c7d2fe"},
-    "am_echo":    {"name": "Echo",    "tag": "AmMale",   "avatarColor": "#a3b3d4"},
-    "am_michael": {"name": "Michael", "tag": "AmMale",   "avatarColor": "#d4e3c5"},
-    "bf_alice":   {"name": "Alice",   "tag": "BrFemale", "avatarColor": "#fce7f3"},
-    "bm_george":  {"name": "George",  "tag": "BrMale",   "avatarColor": "#c5d4f0"},
+}
+
+# Kokoro voice id prefix → human language label.
+_KOKORO_LANG = {
+    "a": "American English", "b": "British English",
+    "e": "Spanish",          "f": "French",
+    "h": "Hindi",            "i": "Italian",
+    "j": "Japanese",         "p": "Portuguese",
+    "z": "Mandarin",
+}
+
+# Kokoro avatar colors per language so the grid is scannable at a glance.
+_KOKORO_COLOR = {
+    "a": "#bfdbfe",  # blue
+    "b": "#fce7f3",  # pink
+    "e": "#fde68a",  # yellow
+    "f": "#bbf7d0",  # mint
+    "h": "#fbcfe8",  # rose
+    "i": "#c7d2fe",  # indigo
+    "j": "#fecaca",  # coral
+    "p": "#d4e3c5",  # sage
+    "z": "#fed7aa",  # peach
 }
 
 
-def _voice_payload(voice_id: str) -> dict:
-    meta = _VOICE_META.get(voice_id, {})
+def _kokoro_voice_payload(voice_id: str) -> dict | None:
+    """Auto-derive UI metadata from a Kokoro voice id like 'bf_alice'."""
+    if len(voice_id) < 3 or voice_id[1] not in ("f", "m") or voice_id[2] != "_":
+        return None
+    lang_letter, gender_letter = voice_id[0], voice_id[1]
+    lang = _KOKORO_LANG.get(lang_letter)
+    if lang is None:
+        return None
+    gender = "Female" if gender_letter == "f" else "Male"
+    name = voice_id[3:].replace("_", " ").title()
     return {
         "id": voice_id,
         "speaker": voice_id,
-        "name": meta.get("name", voice_id.replace("_", " ").title()),
-        "tag": meta.get("tag", ""),
-        "avatarColor": meta.get("avatarColor", "#d4d4d4"),
+        "name": name,
+        "tag": f"{lang} · {gender}",
+        "avatarColor": _KOKORO_COLOR.get(lang_letter, "#d4d4d4"),
+        # Extra fields the frontend's voice filter uses.
+        "language": lang,
+        "gender": gender,
+    }
+
+
+def _voice_payload(voice_id: str) -> dict:
+    if voice_id in _VOICE_META:
+        meta = _VOICE_META[voice_id]
+        return {
+            "id": voice_id,
+            "speaker": voice_id,
+            "name": meta.get("name", voice_id.replace("_", " ").title()),
+            "tag": meta.get("tag", ""),
+            "avatarColor": meta.get("avatarColor", "#d4d4d4"),
+            "language": "",
+            "gender": "",
+        }
+    kokoro = _kokoro_voice_payload(voice_id)
+    if kokoro:
+        return kokoro
+    # Generic fallback for unknown ids.
+    return {
+        "id": voice_id, "speaker": voice_id,
+        "name": voice_id.replace("_", " ").title(),
+        "tag": "", "avatarColor": "#d4d4d4",
+        "language": "", "gender": "",
     }
 
 
