@@ -33,3 +33,7 @@ CLAUDE.md
 # Design handoff (kept locally, not committed)
 *.zip
 .design_handoff/
+
+# Frontend
+node_modules/
+frontend/dist/
