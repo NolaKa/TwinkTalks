@@ -9,6 +9,7 @@ import { Library } from './components/Library'
 import { SettingsList } from './components/SettingsList'
 import { Topbar } from './components/Topbar'
 import { VoicePicker } from './components/VoicePicker'
+import { VoiceStyleControls } from './components/VoiceStyleControls'
 import { useTheme } from './hooks/useTheme'
 import type {
   ActiveJobInfo, FileMetadata, Language, LibraryEntry, Preset, Settings, Voice,
@@ -217,20 +218,24 @@ export function App() {
                 value={settings.voice_id}
                 onChange={id => updateSettings({ voice_id: id })}
               />
+              <VoiceStyleControls
+                presets={presets}
+                instruct={settings.instruct}
+                saveName={saveName}
+                onInstructChange={v => updateSettings({ instruct: v })}
+                onSaveNameChange={setSaveName}
+                onApplyPreset={handleApplyPreset}
+                onSavePreset={handleSavePreset}
+                onDeletePreset={handleDeletePreset}
+              />
             </div>
 
             <SettingsList
               settings={settings}
               onChange={updateSettings}
               languages={languages}
-              presets={presets}
-              onApplyPreset={handleApplyPreset}
-              onSavePreset={handleSavePreset}
-              onDeletePreset={handleDeletePreset}
               advancedOpen={advancedOpen}
               onToggleAdvanced={() => setAdvancedOpen(o => !o)}
-              saveName={saveName}
-              onSaveNameChange={setSaveName}
             />
 
             <GenerateButton

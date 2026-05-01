@@ -1,19 +1,11 @@
-import type { Format, Language, Preset, Settings } from '../types'
-
-type PresetMap = { builtin: Preset[]; user: Preset[] }
+import type { Format, Language, Settings } from '../types'
 
 type Props = {
   settings: Settings
   onChange: (next: Partial<Settings>) => void
   languages: Language[]
-  presets: PresetMap
-  onApplyPreset: (preset: Preset) => void
-  onSavePreset: (name: string) => void
-  onDeletePreset: (name: string) => void
   advancedOpen: boolean
   onToggleAdvanced: () => void
-  saveName: string
-  onSaveNameChange: (v: string) => void
 }
 
 const FORMATS: Array<{ id: Format; label: string }> = [
@@ -23,12 +15,7 @@ const FORMATS: Array<{ id: Format; label: string }> = [
 ]
 
 export function SettingsList(props: Props) {
-  const {
-    settings, onChange, languages, presets,
-    onApplyPreset, onSavePreset, onDeletePreset,
-    advancedOpen, onToggleAdvanced,
-    saveName, onSaveNameChange,
-  } = props
+  const { settings, onChange, languages, advancedOpen, onToggleAdvanced } = props
 
   return (
     <div
@@ -130,7 +117,7 @@ export function SettingsList(props: Props) {
           fontFamily: 'inherit',
         }}
       >
-        {advancedOpen ? '−' : '+'} Advanced (presets, voice style, OCR language, skip rules)
+        {advancedOpen ? '−' : '+'} Advanced (OCR language, skip rules, merge chapters)
       </button>
 
       {advancedOpen && (
@@ -143,25 +130,6 @@ export function SettingsList(props: Props) {
             gap: 16,
           }}
         >
-          <PresetSection
-            presets={presets}
-            saveName={saveName}
-            onSaveNameChange={onSaveNameChange}
-            onApply={onApplyPreset}
-            onSave={onSavePreset}
-            onDelete={onDeletePreset}
-          />
-
-          <Field label="Voice style instruct">
-            <textarea
-              value={settings.instruct}
-              onChange={e => onChange({ instruct: e.target.value })}
-              placeholder="e.g. Speak calmly like a narrator"
-              rows={2}
-              style={inputStyle}
-            />
-          </Field>
-
           <Field label="OCR language">
             <input
               type="text"
@@ -271,130 +239,10 @@ function CheckboxRow({
   )
 }
 
-// --- Preset section ----------------------------------------------------------
-
-function PresetSection({
-  presets, saveName, onSaveNameChange,
-  onApply, onSave, onDelete,
-}: {
-  presets: PresetMap
-  saveName: string
-  onSaveNameChange: (v: string) => void
-  onApply: (preset: Preset) => void
-  onSave: (name: string) => void
-  onDelete: (name: string) => void
-}) {
-  const all = [...presets.builtin, ...presets.user]
-
-  return (
-    <Field label="Saved presets">
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-        <select
-          value=""
-          onChange={e => {
-            const p = all.find(pp => pp.name === e.target.value)
-            if (p) onApply(p)
-            e.target.value = ''
-          }}
-          style={{ ...inputStyle, flex: 1, paddingRight: 28 }}
-        >
-          <option value="">Apply a preset…</option>
-          {presets.builtin.length > 0 && (
-            <optgroup label="Built-in">
-              {presets.builtin.map(p => (
-                <option key={p.name} value={p.name}>{p.name}</option>
-              ))}
-            </optgroup>
-          )}
-          {presets.user.length > 0 && (
-            <optgroup label="My presets">
-              {presets.user.map(p => (
-                <option key={p.name} value={p.name}>★ {p.name}</option>
-              ))}
-            </optgroup>
-          )}
-        </select>
-      </div>
-
-      <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-        <input
-          type="text"
-          value={saveName}
-          onChange={e => onSaveNameChange(e.target.value)}
-          placeholder="Save current as…"
-          style={{ ...inputStyle, flex: 1 }}
-        />
-        <button
-          onClick={() => {
-            if (saveName.trim()) onSave(saveName.trim())
-          }}
-          disabled={!saveName.trim()}
-          style={{
-            border: '1px solid var(--line)',
-            background: saveName.trim() ? 'var(--ink)' : 'var(--bg-soft-2)',
-            color: saveName.trim() ? 'var(--bg)' : 'var(--dim)',
-            borderRadius: 6,
-            padding: '8px 14px',
-            fontSize: 13,
-            fontWeight: 500,
-            cursor: saveName.trim() ? 'pointer' : 'not-allowed',
-            fontFamily: 'inherit',
-          }}
-        >
-          Save
-        </button>
-      </div>
-
-      {presets.user.length > 0 && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 4 }}>
-          {presets.user.map(p => (
-            <div
-              key={p.name}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                padding: '6px 8px',
-                fontSize: 12,
-                background: 'var(--bg-soft)',
-                borderRadius: 6,
-              }}
-            >
-              <span>★ {p.name}</span>
-              <span style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                <span className="mono" style={{ color: 'var(--dim)', fontSize: 11 }}>
-                  {p.speaker} · {p.speed.toFixed(2)}×
-                </span>
-                <button
-                  onClick={() => onDelete(p.name)}
-                  title="Delete preset"
-                  style={{
-                    border: 'none',
-                    background: 'transparent',
-                    color: 'var(--dim)',
-                    cursor: 'pointer',
-                    padding: 2,
-                    fontSize: 13,
-                    lineHeight: 1,
-                  }}
-                >
-                  ×
-                </button>
-              </span>
-            </div>
-          ))}
-        </div>
-      )}
-
-    </Field>
-  )
-}
-
 // --- Shared styles -----------------------------------------------------------
 
 const inputStyle: React.CSSProperties = {
   width: '100%',
-  resize: 'vertical',
   background: 'var(--bg-soft)',
   border: '1px solid var(--line)',
   borderRadius: 6,
