@@ -36,7 +36,7 @@ def extract_text(
     page_range: tuple[int, int] | None = None,
     skip_tables: bool = False,
     ocr: bool = False,
-    ocr_language: str = "eng",
+    ocr_language: str = "auto",
 ) -> str:
     """Extract text from a PDF file.
 
@@ -194,7 +194,7 @@ def extract_text_by_page(
     page_range: tuple[int, int] | None = None,
     skip_tables: bool = False,
     ocr: bool = False,
-    ocr_language: str = "eng",
+    ocr_language: str = "auto",
 ) -> list[tuple[int, str]]:
     """Extract text from a PDF, returning per-page results.
 

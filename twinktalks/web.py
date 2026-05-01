@@ -146,7 +146,7 @@ def on_chapter_select(chapter_choice, files):
 
 def _extract_and_preprocess(
     file_path: str, skip_references: bool, skip_tables: bool,
-    page_range=None, ocr: bool = False,
+    page_range=None, ocr: bool = False, ocr_language: str = "auto",
 ) -> str:
     """Shared extract + preprocess pipeline."""
     from twinktalks.extractor import extract_text
@@ -157,6 +157,7 @@ def _extract_and_preprocess(
         page_range=page_range,
         skip_tables=skip_tables,
         ocr=ocr,
+        ocr_language=ocr_language or "auto",
     )
     return preprocess(text)
 
@@ -167,12 +168,17 @@ def _synthesize_single_file(
     output_format: str = "wav",
     status_prefix: str = "",
     ocr: bool = False,
+    ocr_language: str = "auto",
+    chapter_markers: bool = True,
 ):
     """Generator: synthesize one file, yielding (status, audio_path, text) per chunk."""
     from twinktalks.chunker import chunk_text
     from twinktalks.audio_utils import save_audio, get_duration_seconds
 
-    text = _extract_and_preprocess(file_path, skip_references, skip_tables, page_range, ocr=ocr)
+    text = _extract_and_preprocess(
+        file_path, skip_references, skip_tables, page_range,
+        ocr=ocr, ocr_language=ocr_language,
+    )
     chunks = chunk_text(text)
     word_count = len(text.split())
 
@@ -230,21 +236,22 @@ def _synthesize_single_file(
                 except Exception as e:
                     logger.warning("Metadata embedding failed: %s", e)
 
-            # Embed chapter markers in MP3 if TOC is available
-            if ext == "mp3" and final_offsets:
+            # Embed chapter markers (MP3 or M4B) when the checkbox is on
+            # and the source has a real TOC.
+            if chapter_markers and ext in ("mp3", "m4b") and final_offsets:
                 try:
                     from twinktalks.extractor import extract_toc
-                    from twinktalks.audio_utils import add_chapter_markers
+                    from twinktalks.audio_utils import add_chapter_markers, add_m4b_chapters
                     toc_chapters = extract_toc(file_path)
                     if toc_chapters:
                         total_ms = int(duration * 1000)
-                        # Use paged extraction for chapter mapping
                         from twinktalks.extractor import extract_text_by_page
                         from twinktalks.text_preprocessor import preprocess as pp
                         from twinktalks.chunker import chunk_paged_text
                         page_texts = extract_text_by_page(
                             file_path, skip_references=skip_references,
                             page_range=page_range, skip_tables=skip_tables,
+                            ocr=ocr, ocr_language=ocr_language,
                         )
                         page_texts = [(pg, pp(t)) for pg, t in page_texts]
                         paged_chunks = chunk_paged_text(page_texts)
@@ -254,11 +261,115 @@ def _synthesize_single_file(
                             paged_chunks, final_offsets, toc_chapters, total_ms,
                         )
                         if audio_chapters:
-                            add_chapter_markers(final_path, audio_chapters)
+                            if ext == "mp3":
+                                add_chapter_markers(final_path, audio_chapters)
+                            else:  # m4b
+                                add_m4b_chapters(final_path, audio_chapters)
                 except Exception as e:
                     logger.warning("Chapter marker embedding failed: %s", e)
 
             yield f"{status_prefix}// DONE — {duration:.1f}s audio / {word_count} words / {total_chunks} chunks", final_path, text
+
+
+def process_merged(
+    file_path: str, speaker: str, language: str, speed: float,
+    skip_references: bool, skip_tables: bool, output_format: str,
+    instruct: str, ocr: bool, ocr_language: str, chapter_markers: bool,
+):
+    """Generator: synthesize every TOC chapter and merge into one audiobook.
+
+    Yields (status, audio_path_or_None, text, completed_files_or_None).
+    """
+    import numpy as np
+    from pathlib import Path as _P
+    from twinktalks.audio_utils import (
+        AudioChapter, add_chapter_markers, add_m4b_chapters, embed_metadata,
+        generate_silence, get_duration_seconds, save_audio,
+    )
+    from twinktalks.book_metadata import extract_metadata
+    from twinktalks.chunker import chunk_text
+    from twinktalks.extractor import extract_text, extract_toc
+    from twinktalks.language_detect import resolve_language
+    from twinktalks.text_preprocessor import preprocess
+
+    INTER_CHAPTER_SILENCE_MS = 1500
+
+    chapters = extract_toc(file_path)
+    if not chapters:
+        yield "// MERGE — no TOC found, falling back to whole-file synthesis", None, "", None
+        return
+
+    engine = _get_engine()
+    tmp_dir = _make_temp_dir()
+    stem = _P(file_path).stem
+    fmt = output_format if output_format in ("wav", "mp3", "m4b") else "m4b"
+
+    segments: list[np.ndarray] = []
+    audio_chapters: list[AudioChapter] = []
+    cumulative_ms = 0
+    sample_rate: int | None = None
+
+    for idx, ch in enumerate(chapters, 1):
+        yield (
+            f"// MERGE [{idx}/{len(chapters)}] — {ch.title} (pages {ch.start_page}-{ch.end_page})",
+            None, "", None,
+        )
+
+        text = preprocess(extract_text(
+            file_path, skip_references=skip_references,
+            page_range=(ch.start_page, ch.end_page),
+            skip_tables=skip_tables, ocr=ocr, ocr_language=ocr_language,
+        ))
+        chunks = chunk_text(text)
+        if not chunks:
+            continue
+
+        resolved = resolve_language(language, text)
+        waveform, sr, _ = engine.synthesize_chunks(
+            chunks, language=resolved, speed=speed,
+            instruct=instruct or "", speaker=speaker,
+        )
+        sample_rate = sr
+
+        if segments:
+            segments.append(generate_silence(INTER_CHAPTER_SILENCE_MS, sr))
+            cumulative_ms += INTER_CHAPTER_SILENCE_MS
+
+        start_ms = cumulative_ms
+        segments.append(waveform)
+        cumulative_ms += int(len(waveform) * 1000 / sr)
+        audio_chapters.append(AudioChapter(title=ch.title, start_ms=start_ms, end_ms=cumulative_ms))
+
+    if not segments:
+        yield "// MERGE — every chapter was empty", None, "", None
+        return
+
+    final_waveform = np.concatenate(segments)
+    final_path = os.path.join(tmp_dir, f"{stem}.{fmt}")
+    save_audio(final_waveform, final_path, sample_rate)
+    duration = get_duration_seconds(final_waveform, sample_rate)
+
+    if fmt in ("mp3", "m4b"):
+        try:
+            meta = extract_metadata(file_path)
+            if meta.title or meta.author or meta.has_cover():
+                embed_metadata(final_path, meta)
+        except Exception as e:
+            logger.warning("Metadata embedding failed: %s", e)
+
+    if chapter_markers:
+        try:
+            if fmt == "m4b":
+                add_m4b_chapters(final_path, audio_chapters)
+            elif fmt == "mp3":
+                add_chapter_markers(final_path, audio_chapters)
+        except Exception as e:
+            logger.warning("Chapter embedding failed: %s", e)
+
+    yield (
+        f"// MERGE DONE — {duration:.1f}s / {len(audio_chapters)} chapters",
+        final_path, "", [final_path],
+    )
 
 
 def process_queue(
@@ -274,6 +385,9 @@ def process_queue(
     output_format: str,
     instruct: str = "",
     ocr: bool = False,
+    ocr_language: str = "auto",
+    chapter_markers: bool = True,
+    merge_chapters: bool = False,
 ):
     """Process one or multiple files. Generator yielding (status, audio, text, completed_files)."""
     if files is None or len(files) == 0:
@@ -285,8 +399,18 @@ def process_queue(
 
     try:
         if len(files) == 1:
-            # Single file mode: use page range as before
             pdf_file = files[0]
+
+            # Merge mode: synthesize every TOC chapter into a single audiobook.
+            # Only meaningful for single files; ignored in queue mode.
+            if merge_chapters:
+                yield from process_merged(
+                    pdf_file.name, speaker, language, speed,
+                    skip_references, skip_tables, fmt,
+                    instruct or "", ocr, ocr_language or "auto", chapter_markers,
+                )
+                return
+
             total = int(page_info) if page_info else 9999
             page_range = _get_page_range(page_start, page_end, total)
             stem = Path(pdf_file.name).stem
@@ -295,7 +419,8 @@ def process_queue(
             for status, audio, text in _synthesize_single_file(
                 pdf_file.name, stem, tmp_dir,
                 page_range, speaker, language, speed, skip_references, skip_tables, instruct,
-                output_format=fmt, ocr=ocr,
+                output_format=fmt, ocr=ocr, ocr_language=ocr_language or "auto",
+                chapter_markers=chapter_markers,
             ):
                 yield status, audio, text, None
             return
@@ -315,7 +440,8 @@ def process_queue(
             for status, audio, text in _synthesize_single_file(
                 file_obj.name, stem, file_tmp_dir,
                 None, speaker, language, speed, skip_references, skip_tables, instruct,
-                output_format=fmt, ocr=ocr,
+                output_format=fmt, ocr=ocr, ocr_language=ocr_language or "auto",
+                chapter_markers=chapter_markers,
                 status_prefix=f"// QUEUE {file_idx}/{len(files)} — \"{file_name}\" — ",
             ):
                 final_audio = audio
@@ -338,7 +464,8 @@ def process_queue(
 
 def extract_only(
     files, page_start, page_end, page_info,
-    skip_references: bool, skip_tables: bool, ocr: bool = False,
+    skip_references: bool, skip_tables: bool,
+    ocr: bool = False, ocr_language: str = "auto",
 ) -> str:
     """Extract and preprocess text without TTS."""
     if not files or len(files) == 0:
@@ -348,14 +475,17 @@ def extract_only(
     total = int(page_info) if page_info else 9999
     page_range = _get_page_range(page_start, page_end, total)
 
-    return _extract_and_preprocess(pdf_file.name, skip_references, skip_tables, page_range, ocr=ocr)
+    return _extract_and_preprocess(
+        pdf_file.name, skip_references, skip_tables, page_range,
+        ocr=ocr, ocr_language=ocr_language or "auto",
+    )
 
 
 def preview_voice(
     files, page_start, page_end, page_info,
     speaker: str, language: str, speed: float,
     skip_references: bool, skip_tables: bool, instruct: str = "",
-    ocr: bool = False,
+    ocr: bool = False, ocr_language: str = "auto",
 ):
     """Synthesize only the first chunk so the user can audition the voice quickly."""
     if not files or len(files) == 0:
@@ -370,7 +500,10 @@ def preview_voice(
     page_range = _get_page_range(page_start, page_end, total)
 
     try:
-        text = _extract_and_preprocess(pdf_file.name, skip_references, skip_tables, page_range, ocr=ocr)
+        text = _extract_and_preprocess(
+            pdf_file.name, skip_references, skip_tables, page_range,
+            ocr=ocr, ocr_language=ocr_language or "auto",
+        )
         chunks = chunk_text(text)
         if not chunks:
             return "// NO TEXT TO PREVIEW", None
@@ -458,10 +591,27 @@ def create_app() -> gr.Blocks:
                     skip_tables = gr.Checkbox(value=False, label="SKIP TABLES")
                     ocr_enabled = gr.Checkbox(value=False, label="OCR (SCANNED PDF)")
 
+                with gr.Row(elem_classes=["options-row"]):
+                    chapter_markers = gr.Checkbox(
+                        value=True, label="CHAPTER MARKERS",
+                    )
+                    merge_chapters = gr.Checkbox(
+                        value=False, label="MERGE CHAPTERS",
+                    )
+
                 output_format = gr.Radio(
                     choices=["wav", "mp3", "m4b"], value="wav", label="FORMAT",
                     elem_classes=["format-inline"],
                 )
+
+                with gr.Accordion("ADVANCED", open=False):
+                    ocr_language = gr.Textbox(
+                        value="auto",
+                        label="OCR LANGUAGE",
+                        placeholder="auto / eng / pol / eng+pol / chi_sim / jpn",
+                        info="'auto' uses every Tesseract pack you have installed. "
+                             "Override only when OCR'ing a non-Western script.",
+                    )
 
 
                 # Voice style
@@ -526,17 +676,17 @@ def create_app() -> gr.Blocks:
         )
         preview_btn.click(
             fn=extract_only,
-            inputs=[pdf_input, page_start, page_end, page_info, skip_refs, skip_tables, ocr_enabled],
+            inputs=[pdf_input, page_start, page_end, page_info, skip_refs, skip_tables, ocr_enabled, ocr_language],
             outputs=[text_preview],
         )
         preview_voice_btn.click(
             fn=preview_voice,
-            inputs=[pdf_input, page_start, page_end, page_info, speaker, language, speed_slider, skip_refs, skip_tables, instruct_box, ocr_enabled],
+            inputs=[pdf_input, page_start, page_end, page_info, speaker, language, speed_slider, skip_refs, skip_tables, instruct_box, ocr_enabled, ocr_language],
             outputs=[status, audio_output],
         )
         generate_btn.click(
             fn=process_queue,
-            inputs=[pdf_input, page_start, page_end, page_info, speaker, language, speed_slider, skip_refs, skip_tables, output_format, instruct_box, ocr_enabled],
+            inputs=[pdf_input, page_start, page_end, page_info, speaker, language, speed_slider, skip_refs, skip_tables, output_format, instruct_box, ocr_enabled, ocr_language, chapter_markers, merge_chapters],
             outputs=[status, audio_output, text_preview, completed_files],
         )
 

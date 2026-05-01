@@ -269,8 +269,8 @@ def create_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--ocr-language",
         type=str,
-        default="eng",
-        help="Tesseract language code for --ocr, e.g. 'eng', 'pol', 'eng+pol' (default: eng)",
+        default="auto",
+        help="Tesseract language for --ocr: 'auto' (default — uses every installed pack), or explicit codes like 'eng', 'pol', 'eng+jpn'",
     )
     parser.add_argument(
         "--show-toc",
@@ -354,7 +354,7 @@ def _process_single(
             page_range=page_range,
             skip_tables=args.skip_tables,
             ocr=getattr(args, "ocr", False),
-            ocr_language=getattr(args, "ocr_language", "eng"),
+            ocr_language=getattr(args, "ocr_language", "auto"),
         )
         page_texts = [(pg, preprocess(t)) for pg, t in page_texts]
         text = "\n\n".join(t for _, t in page_texts)
@@ -371,7 +371,7 @@ def _process_single(
             page_range=page_range,
             skip_tables=args.skip_tables,
             ocr=getattr(args, "ocr", False),
-            ocr_language=getattr(args, "ocr_language", "eng"),
+            ocr_language=getattr(args, "ocr_language", "auto"),
         )
         log.info("%sExtracted %d characters.", prefix, len(text))
         text = preprocess(text)
