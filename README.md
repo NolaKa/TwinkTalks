@@ -44,6 +44,7 @@ Convert academic papers, textbooks, e-books, notes, and web pages into natural-s
 - **Apple Silicon Mac** (M1/M2/M3/M4) with **32GB+ unified memory** recommended
 - Auto-detected device: MPS (Apple Silicon) → CUDA (NVIDIA) → CPU fallback
 - Python 3.12+
+- Node.js 20+ (only for the web UI build)
 - System deps: `portaudio`, `ffmpeg`, `sox` (installed via Homebrew)
 - Optional for OCR: `tesseract`, `ghostscript`, `qpdf` (also via Homebrew) plus `pip install ocrmypdf`
 
@@ -52,7 +53,7 @@ Convert academic papers, textbooks, e-books, notes, and web pages into natural-s
 ```bash
 git clone https://github.com/NolaKa/TwinkTalks.git
 cd TwinkTalks
-chmod +x setup.sh && ./setup.sh
+chmod +x setup.sh && ./setup.sh   # creates .venv on Python 3.12 and builds the React frontend
 source .venv/bin/activate
 ```
 
@@ -61,6 +62,7 @@ Or install as an editable package:
 ```bash
 python3.12 -m venv .venv && source .venv/bin/activate
 pip install -e .
+(cd frontend && npm install && npm run build)
 ```
 
 ## Usage
@@ -68,29 +70,28 @@ pip install -e .
 ### Web UI
 
 ```bash
-python -m twinktalks.web
+twinktalks-server
 # Open http://localhost:7860
 ```
 
-#### Single file mode
+The interface is a React + Vite SPA served by FastAPI. It exposes:
 
-Upload a PDF or EPUB. The UI shows:
-- **Page range** (FROM PAGE / TO PAGE) — appears after upload, auto-detected page count
-- **Chapter dropdown** — auto-detected TOC, selecting a chapter updates the page range
-- **Voice / Language / Speed** — 9 speakers, 10+ languages, 0.5-2.0x speed slider
-- **Skip References / Skip Tables** — checkboxes for academic text cleanup
-- **Format** — WAV or MP3. MP3 output automatically embeds chapter markers if the file has a TOC
-- **Voice Style** accordion — preset dropdown (8 built-in + your saved favorites), instruct text field for natural language voice control, save button for custom presets
-- **Preview Text** — extract and display text without generating audio
-- **Generate** — starts streaming synthesis. Audio player updates after each chunk. Status bar shows real-time progress: `// GENERATING — chunk 3/15 — 42.1s`
+- **Drop zone / file card** — drag-and-drop or click to upload PDF, EPUB, Markdown, TXT, HTML. Once loaded, you see file size, page/chapter count, word count, and an estimated audio duration. Title and cover art come from the document's metadata.
+- **Voice picker** — a 3×2 grid of six voices mapped to Qwen3-TTS speakers (Aiden, Sage, Rio, Koen, Iris, Milo).
+- **Settings list** — Language (with `Auto`), Speed slider (0.5–2.0×), Format (WAV/MP3/M4B segmented), Chapter markers toggle, OCR fallback toggle.
+- **Advanced** — Saved presets dropdown + save/delete (built-in + your favorites in `~/.twinktalks/presets.json`), voice style instruct, OCR language, skip references/tables, merge-chapters.
+- **Generate** — streaming synthesis with progress events sent over Server-Sent Events; the sidebar's Active Job card updates per chunk with chunk count, rendered duration, and ETA. ⌘⏎ also triggers it.
+- **Library** — every audiobook you've generated, stored in `~/.twinktalks/library/`. Click a row to play in-browser; covers come from embedded ID3/MP4 tags.
+- **Theme** — single light/dark toggle in the topbar, persisted in `localStorage`. First-time visit follows your system preference.
 
-#### File queue mode
+### Frontend dev mode
 
-Upload **multiple files** at once (drag & drop or multi-select). Page range and chapter controls are hidden — each file is processed with all pages using the shared voice/speed/preset settings.
+If you want hot reload while editing the UI, run Vite alongside the backend:
 
-Status format: `// QUEUE 2/5 — "textbook.pdf" — chunk 3/15 — 42.1s`
-
-After all files complete, a **COMPLETED FILES** panel appears with download links for every generated audio file.
+```bash
+twinktalks-server                # backend on :7860
+cd frontend && npm run dev       # frontend on :5173 (proxies /api to :7860)
+```
 
 ### CLI
 
@@ -229,9 +230,26 @@ twinktalks/
 ├── book_metadata.py      # Extract title/author/cover from PDF (fitz) and EPUB (DC metadata)
 ├── language_detect.py    # langdetect → Qwen3-TTS language name mapping
 ├── cli.py                # CLI with batch + merge-chapters, preview, OCR, chapter markers
-├── web.py                # Gradio web UI with streaming playback, file queue, format selection
-└── assets/
-    └── twinktalks.css    # Web UI CSS (loaded at startup by web.py)
+├── api.py                # FastAPI app — entry point for `twinktalks-server`
+└── api_routes/
+    ├── static_data.py    # Voices, languages, formats, presets endpoints
+    ├── files.py          # Upload + metadata + preview endpoints
+    ├── jobs.py           # Synthesis jobs with SSE progress streaming
+    └── library.py        # Previously generated audiobooks
+
+frontend/
+├── package.json
+├── vite.config.ts        # Dev server proxies /api → :7860
+├── index.html            # Geist + Geist Mono via Google Fonts
+└── src/
+    ├── App.tsx           # Top-level state: file, settings, job, library
+    ├── main.tsx
+    ├── api/client.ts     # Typed fetch wrappers for every backend endpoint
+    ├── components/       # Topbar, Hero, Dropzone, FileCard, VoicePicker,
+    │                     # SettingsList, GenerateButton, ActiveJob, Library
+    ├── hooks/useTheme.ts # light/dark toggle, persisted to localStorage
+    ├── styles/           # Design tokens + base.css
+    └── types.ts          # TypeScript shapes shared with the API
 ```
 
 ## Model
@@ -263,7 +281,7 @@ python -m twinktalks --model-path ./model paper.pdf
 
 **Web UI with local model:**
 ```bash
-TWINKTALKS_MODEL_PATH=./model python -m twinktalks.web
+TWINKTALKS_MODEL_PATH=./model twinktalks-server
 ```
 
 ### Expected warnings on macOS
@@ -283,23 +301,33 @@ brew install portaudio ffmpeg sox
 
 **Python** (via pip):
 ```
-qwen-tts          # TTS model interface
-torch              # PyTorch (MPS backend)
-pdfplumber         # PDF extraction with layout mode
-PyMuPDF            # PDF fallback + TOC extraction
-ebooklib           # EPUB parsing
-beautifulsoup4     # HTML text extraction from EPUB
-nltk               # Sentence tokenization
-soundfile          # WAV I/O
-pydub              # MP3 export (via ffmpeg)
-mutagen            # ID3v2 chapter marker embedding in MP3
-numpy              # Audio array operations
-gradio             # Web UI framework
-tqdm               # CLI progress bars
-pytest             # Test framework
+qwen-tts                  # TTS model interface
+torch                     # PyTorch (MPS backend)
+pdfplumber                # PDF extraction with layout mode
+PyMuPDF                   # PDF fallback + TOC + cover render
+ebooklib                  # EPUB parsing
+beautifulsoup4            # HTML text extraction
+nltk                      # Sentence tokenization
+soundfile                 # WAV I/O
+pydub                     # MP3 / M4B export (via ffmpeg)
+mutagen                   # ID3v2 / MP4 atoms for chapter markers + metadata
+numpy                     # Audio array operations
+langdetect                # Auto language detection
+fastapi + uvicorn         # Web backend
+sse-starlette             # Server-Sent Events for streaming progress
+python-multipart          # Multipart upload parsing
+tqdm                      # CLI progress bars
+pytest                    # Test framework
 ```
 
-Full list with version constraints: [`requirements.txt`](requirements.txt)
+**JavaScript** (via npm, in `frontend/`):
+```
+react / react-dom         # UI runtime
+vite                      # Dev server + bundler
+typescript                # Static typing
+```
+
+Full Python list: [`requirements.txt`](requirements.txt). Full JS list: [`frontend/package.json`](frontend/package.json).
 
 ## Tests
 
@@ -308,4 +336,4 @@ source .venv/bin/activate
 python -m pytest tests/ -v
 ```
 
-241 unit tests covering: text preprocessor, chunker (page-aware + cross-page paragraph merging), PDF extractor (with mocked OCR), EPUB extractor, plain-text/Markdown/HTML extractors, extractor router, TOC, sessions, presets, CLI batch helpers and flags, web helpers, TTS engine (model mocked), chapter markers (MP3 ID3 + M4B chapter atoms), chunk offset computation, chunk-to-chapter mapping, audio export (WAV/MP3/M4B), metadata embedding (title, author, cover art), and language auto-detection.
+224 unit tests covering: text preprocessor, chunker (page-aware + cross-page paragraph merging), PDF extractor (with mocked OCR), EPUB extractor, plain-text/Markdown/HTML extractors, extractor router, TOC, sessions, presets, CLI batch helpers and flags, TTS engine (model mocked), chapter markers (MP3 ID3 + M4B chapter atoms), chunk offset computation, chunk-to-chapter mapping, audio export (WAV/MP3/M4B), metadata embedding (title, author, cover art), and language auto-detection.

@@ -38,8 +38,19 @@ python -c "import torch; available = torch.backends.mps.is_available(); print(f'
 # Output dir
 mkdir -p output
 
+# Frontend (optional): build the React UI so twinktalks-server can serve it.
+if command -v npm >/dev/null 2>&1; then
+    echo ""
+    echo "Building frontend (Vite)..."
+    (cd frontend && npm install --silent && npm run build)
+else
+    echo ""
+    echo "Skipping frontend build — npm not found. Install Node.js if you want the web UI."
+fi
+
 echo ""
 echo "=== Setup complete! ==="
-echo "Activate venv: source .venv/bin/activate"
-echo "Run CLI:       python -m twinktalks.cli paper.pdf -o output/audio.wav"
-echo "Run Web UI:    python -m twinktalks.web"
+echo "Activate venv:  source .venv/bin/activate"
+echo "Run CLI:        twinktalks paper.pdf -o output/audio.wav"
+echo "Run web UI:     twinktalks-server   →  http://localhost:7860"
+echo "Frontend dev:   cd frontend && npm run dev   (with twinktalks-server running)"

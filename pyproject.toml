@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "twinktalks"
-version = "0.1.0"
-description = "PDF & EPUB to speech using Qwen3-TTS"
+version = "0.3.0"
+description = "Local-first PDF / EPUB / Markdown / HTML to audiobook, powered by Qwen3-TTS"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
@@ -21,7 +21,6 @@ dependencies = [
     "pydub>=0.25.1",
     "mutagen>=1.47",
     "tqdm>=4.66",
-    "gradio>=5.0",
     "langdetect>=1.0",
     "fastapi>=0.110",
     "uvicorn[standard]>=0.30",
@@ -36,12 +35,8 @@ ocr = ["ocrmypdf>=16.0"]
 
 [project.scripts]
 twinktalks = "twinktalks.cli:main"
-twinktalks-web = "twinktalks.web:main"
 twinktalks-server = "twinktalks.api:main"
 
 [tool.setuptools.packages.find]
 include = ["twinktalks*"]
 exclude = ["tests*", "output*"]
-
-[tool.setuptools.package-data]
-twinktalks = ["assets/*.css"]

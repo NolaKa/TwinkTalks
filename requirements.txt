@@ -25,8 +25,11 @@ langdetect>=1.0
 # CLI
 tqdm>=4.66
 
-# Web UI
-gradio>=5.0
+# Web backend (FastAPI). The frontend lives in frontend/ and is built with Vite.
+fastapi>=0.110
+uvicorn[standard]>=0.30
+sse-starlette>=2.1
+python-multipart>=0.0.9
 
 # Dev
 pytest>=8.0

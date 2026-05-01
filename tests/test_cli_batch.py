@@ -59,17 +59,3 @@ class TestParserChapters:
         parser = create_parser()
         args = parser.parse_args(["test.pdf"])
         assert args.preview is False
-
-
-class TestPreviewVoice:
-    def test_no_files_returns_error(self):
-        from twinktalks.web import preview_voice
-        status, audio = preview_voice(None, 1, 1, "", "Aiden", "English", 1.0, True, False, "")
-        assert "NO FILE" in status
-        assert audio is None
-
-    def test_empty_files_returns_error(self):
-        from twinktalks.web import preview_voice
-        status, audio = preview_voice([], 1, 1, "", "Aiden", "English", 1.0, True, False, "")
-        assert "NO FILE" in status
-        assert audio is None
