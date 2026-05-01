@@ -93,6 +93,53 @@ def chunk_text(text: str, max_chars: int = MAX_CHUNK_CHARS) -> list[Chunk]:
     return chunks
 
 
+_SENTENCE_TERMINATORS = (".", "!", "?", '"', "'", ")", "]", "”", "’", ":", ";")
+
+
+def _split_continuation(text: str) -> tuple[str, str]:
+    """Pick the head of a continuation page: a paragraph break wins, else the first sentence."""
+    if "\n\n" in text:
+        head, _, rest = text.partition("\n\n")
+        return head, rest
+    _ensure_nltk_data()
+    sentences = nltk.sent_tokenize(text)
+    if not sentences:
+        return text, ""
+    head = sentences[0]
+    rest = " ".join(sentences[1:])
+    return head, rest
+
+
+def _merge_page_continuations(
+    page_texts: list[tuple[int, str]],
+) -> list[tuple[int, str]]:
+    """Merge a page's tail into the next page when it appears to be mid-paragraph.
+
+    PDFs frequently break paragraphs across page boundaries. Treating each page
+    as an independent unit causes chunk_text to cut at the page break instead of
+    at a sentence boundary, producing audibly clipped chunks. We detect this by
+    checking whether the page's text ends with a sentence terminator; if not,
+    the head of the next page (up to the first paragraph break, falling back to
+    the first sentence) is appended to it. The continued chunk keeps the
+    earlier page as its source_page.
+    """
+    nonempty = [(p, t) for p, t in page_texts if t and t.strip()]
+    if not nonempty:
+        return []
+
+    result: list[tuple[int, str]] = [nonempty[0]]
+    for page_num, text in nonempty[1:]:
+        prev_page, prev_text = result[-1]
+        if prev_text and not prev_text.rstrip().endswith(_SENTENCE_TERMINATORS):
+            head, rest = _split_continuation(text)
+            result[-1] = (prev_page, prev_text.rstrip() + " " + head.lstrip())
+            if rest.strip():
+                result.append((page_num, rest))
+        else:
+            result.append((page_num, text))
+    return result
+
+
 def chunk_paged_text(
     page_texts: list[tuple[int, str]],
     max_chars: int = MAX_CHUNK_CHARS,
@@ -108,7 +155,7 @@ def chunk_paged_text(
     chunks: list[Chunk] = []
     chunk_index = 0
 
-    for page_num, page_text in page_texts:
+    for page_num, page_text in _merge_page_continuations(page_texts):
         page_chunks = chunk_text(page_text, max_chars)
         for pc in page_chunks:
             chunks.append(Chunk(

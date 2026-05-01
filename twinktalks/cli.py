@@ -16,6 +16,18 @@ from twinktalks.config import (
 )
 
 
+def _build_progress(prefix: str, total: int, start_from: int, mgr, session):
+    """Build (callback, close) backed by tqdm. tqdm is a hard dependency."""
+    from tqdm import tqdm
+    pbar = tqdm(total=total, initial=start_from, desc=f"{prefix}Generating", unit="chunk")
+
+    def callback(current, _total):
+        pbar.update(1)
+        mgr.update_progress(session, current)
+
+    return callback, pbar.close
+
+
 def _sanitize_filename(title: str) -> str:
     """Convert a chapter title to a safe filename component."""
     s = re.sub(r'[^\w\s-]', '', title)
@@ -262,15 +274,8 @@ def _process_single(
 
     session_dir = mgr.get_session_dir(session.id)
 
+    progress, close_progress = _build_progress(prefix, len(chunks), start_from, mgr, session)
     try:
-        from tqdm import tqdm
-
-        pbar = tqdm(total=len(chunks), initial=start_from, desc=f"{prefix}Generating", unit="chunk")
-
-        def progress(current, total):
-            pbar.update(1)
-            mgr.update_progress(session, current)
-
         start_time = time.time()
         waveform, sample_rate, _offsets = engine.synthesize_chunks(
             chunks,
@@ -281,22 +286,8 @@ def _process_single(
             session_dir=session_dir,
             start_from=start_from,
         )
-        pbar.close()
-    except ImportError:
-        def progress(current, total):
-            log.info("%s  Chunk %d/%d", prefix, current, total)
-            mgr.update_progress(session, current)
-
-        start_time = time.time()
-        waveform, sample_rate, _offsets = engine.synthesize_chunks(
-            chunks,
-            language=args.language,
-            speed=args.speed,
-            instruct=args.instruct,
-            progress_callback=progress,
-            session_dir=session_dir,
-            start_from=start_from,
-        )
+    finally:
+        close_progress()
 
     elapsed = time.time() - start_time
 

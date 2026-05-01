@@ -59,3 +59,44 @@ class TestChunkPagedText:
         assert len(chunks) >= 2
         # First chunk should mark paragraph end
         assert chunks[0].is_paragraph_end is True
+
+
+class TestPageBoundaryMerging:
+    def test_unfinished_sentence_merges_with_next_page(self):
+        """When page N ends mid-paragraph, head of page N+1 should be glued in."""
+        page_texts = [
+            (1, "This is an introduction that runs across the page break and"),
+            (2, "continues here with more words."),
+        ]
+        chunks = chunk_paged_text(page_texts)
+        all_text = " ".join(c.text for c in chunks)
+        assert "across the page break and continues here" in all_text
+
+    def test_terminated_page_does_not_merge(self):
+        """When page N ends with a sentence terminator, no merging happens."""
+        page_texts = [
+            (1, "Page one ends cleanly."),
+            (2, "Page two starts here."),
+        ]
+        chunks = chunk_paged_text(page_texts)
+        # Each page should produce its own chunk(s) with its own source_page
+        page_1_chunks = [c for c in chunks if c.source_page == 1]
+        page_2_chunks = [c for c in chunks if c.source_page == 2]
+        assert len(page_1_chunks) == 1
+        assert len(page_2_chunks) == 1
+        assert "Page one ends cleanly" in page_1_chunks[0].text
+        assert "Page two starts here" in page_2_chunks[0].text
+
+    def test_merged_chunk_keeps_earlier_source_page(self):
+        """The continuation should be attributed to the page where it started."""
+        page_texts = [
+            (5, "Sentence beginning on five and"),
+            (6, "ending on six. New paragraph here."),
+        ]
+        chunks = chunk_paged_text(page_texts)
+        # Find the chunk that contains the merged sentence
+        merged_chunk = next(c for c in chunks if "and ending" in c.text)
+        assert merged_chunk.source_page == 5
+        # The "New paragraph here." stays on page 6
+        new_para_chunk = next(c for c in chunks if "New paragraph" in c.text)
+        assert new_para_chunk.source_page == 6

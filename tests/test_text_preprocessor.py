@@ -102,12 +102,26 @@ class TestRemoveSectionNumbers:
 
 
 class TestRemovePageNumbers:
-    def test_page_number(self):
-        result = remove_page_numbers("text\n  42  \nmore")
+    def test_page_number_between_paragraphs(self):
+        """The realistic shape: PDF pages joined with \\n\\n, page number stranded between."""
+        result = remove_page_numbers("First page text.\n\n  42  \n\nSecond page text.")
         assert "42" not in result
+        # Paragraph separation preserved
+        assert "First page text." in result
+        assert "Second page text." in result
 
     def test_preserves_numbers_in_text(self):
         text = "There are 42 samples in the dataset."
+        assert remove_page_numbers(text) == text
+
+    def test_preserves_digit_line_without_paragraph_context(self):
+        """A digit-only line embedded in a single block of text is NOT a page number."""
+        text = "text\n  42  \nmore"
+        assert remove_page_numbers(text) == text
+
+    def test_preserves_numbered_list_items(self):
+        """A bare-number line in a numbered list (no surrounding blank lines) stays."""
+        text = "Items:\n1\nfirst\n2\nsecond"
         assert remove_page_numbers(text) == text
 
 

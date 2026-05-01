@@ -13,7 +13,13 @@ _RE_URLS = re.compile(r"https?://\S+")
 _RE_DOIS = re.compile(r"doi:\s*\S+", re.IGNORECASE)
 _RE_EMAILS = re.compile(r"\b\S+@\S+\.\S+\b")
 _RE_SECTION_NUMBERS = re.compile(r"^(\d+\.)+\d*\s+", re.MULTILINE)
-_RE_PAGE_NUMBERS = re.compile(r"^\s*\d{1,4}\s*$", re.MULTILINE)
+# Page numbers in extracted PDFs sit on their own line between paragraph breaks
+# (since pages are joined with "\n\n"). Requiring blank-line context on both
+# sides — or a document edge on one side — avoids eating digit-only lines that
+# are really inline content (numbered lists, isolated years).
+_RE_PAGE_NUMBERS = re.compile(
+    r"(?:\A|(?<=\n\n))[ \t]*\d{1,4}[ \t]*\n(?=\n|\Z)"
+)
 _RE_MULTI_SPACES = re.compile(r"[ \t]+")
 _RE_MULTI_NEWLINES = re.compile(r"\n{3,}")
 _RE_BLANK_LINES = re.compile(r"^\s+$", re.MULTILINE)

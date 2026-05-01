@@ -1,9 +1,12 @@
 """Extract text from PDFs with proper reading order for multi-column layouts."""
 
+import logging
 import re
 from pathlib import Path
 
 import pdfplumber
+
+logger = logging.getLogger(__name__)
 
 from twinktalks.config import (
     PDF_CROP_MARGIN_TOP,
@@ -126,7 +129,8 @@ def _extract_with_pdfplumber(
                 )
                 if text:
                     pages_text.append(text)
-    except Exception:
+    except Exception as e:
+        logger.warning("pdfplumber extraction failed for %s: %s", path.name, e)
         return ""
 
     return "\n\n".join(pages_text)
@@ -162,7 +166,8 @@ def _extract_with_pymupdf(path: Path, max_pages: int | None, page_range: tuple[i
             if text:
                 pages_text.append(text)
         doc.close()
-    except Exception:
+    except Exception as e:
+        logger.warning("PyMuPDF extraction failed for %s: %s", path.name, e)
         return ""
 
     return "\n\n".join(pages_text)
@@ -210,8 +215,8 @@ def extract_text_by_page(
                         text = truncate_at_references(text)
                     if text.strip():
                         page_texts.append((page_num, text))
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("pdfplumber per-page extraction failed for %s: %s", path.name, e)
 
     return page_texts
 

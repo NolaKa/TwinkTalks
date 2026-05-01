@@ -27,6 +27,16 @@ def generate_silence(duration_ms: int, sample_rate: int = SAMPLE_RATE) -> np.nda
     return np.zeros(num_samples, dtype=np.float32)
 
 
+def silence_ms_after(prev_chunk) -> int:
+    """Silence (ms) to insert after a chunk before the next one.
+
+    Single source of truth shared by concatenation and offset computation —
+    keeping these in lockstep is required for chapter markers to land correctly.
+    """
+    from twinktalks.config import INTER_SENTENCE_SILENCE_MS, INTER_PARAGRAPH_SILENCE_MS
+    return INTER_PARAGRAPH_SILENCE_MS if prev_chunk.is_paragraph_end else INTER_SENTENCE_SILENCE_MS
+
+
 def concatenate_audio(
     segments: list[np.ndarray],
     silences_ms: list[int],
@@ -59,6 +69,10 @@ def concatenate_audio(
     return np.concatenate(parts)
 
 
+class MP3ExportError(RuntimeError):
+    """Raised when MP3 encoding fails (e.g. ffmpeg missing)."""
+
+
 def save_audio(
     waveform: np.ndarray,
     output_path: str,
@@ -67,7 +81,8 @@ def save_audio(
     """Save waveform to WAV or MP3 file.
 
     Format is determined by file extension.
-    MP3 requires ffmpeg to be installed.
+    MP3 requires ffmpeg to be installed; on failure, raises MP3ExportError
+    without writing a side-file. Callers decide whether to retry as WAV.
     """
     path = Path(output_path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -80,7 +95,6 @@ def save_audio(
         try:
             from pydub import AudioSegment
 
-            # Convert numpy array to pydub AudioSegment
             audio_int16 = (np.clip(waveform, -1.0, 1.0) * 32767).astype(np.int16)
             audio_segment = AudioSegment(
                 data=audio_int16.tobytes(),
@@ -90,12 +104,9 @@ def save_audio(
             )
             audio_segment.export(str(path), format="mp3")
         except Exception as e:
-            # Fallback to WAV if MP3 export fails
-            wav_path = path.with_suffix(".wav")
-            sf.write(str(wav_path), waveform, sample_rate)
-            raise RuntimeError(
-                f"MP3 export failed ({e}). Saved as WAV instead: {wav_path}"
-            )
+            raise MP3ExportError(
+                f"MP3 export failed ({e}). Install ffmpeg, or save with a .wav extension."
+            ) from e
     else:
         raise ValueError(f"Unsupported format: {ext}. Use .wav or .mp3")
 
@@ -120,8 +131,6 @@ def compute_chunk_offsets(
     Returns:
         List of start offsets in milliseconds, one per segment.
     """
-    from twinktalks.config import INTER_SENTENCE_SILENCE_MS, INTER_PARAGRAPH_SILENCE_MS
-
     offsets = []
     cumulative_samples = 0
 
@@ -130,11 +139,7 @@ def compute_chunk_offsets(
         offsets.append(offset_ms)
         cumulative_samples += len(seg)
         if i < len(segments) - 1:
-            silence_ms = (
-                INTER_PARAGRAPH_SILENCE_MS
-                if chunks[i].is_paragraph_end
-                else INTER_SENTENCE_SILENCE_MS
-            )
+            silence_ms = silence_ms_after(chunks[i])
             silence_samples = int(sample_rate * silence_ms / 1000)
             cumulative_samples += silence_samples
 

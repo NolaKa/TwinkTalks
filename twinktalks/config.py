@@ -10,10 +10,29 @@ AVAILABLE_SPEAKERS = [
     "Leo", "Mia", "Noah", "Sophia",
 ]
 
-# Device (Apple Silicon)
+# Device — auto-detected at runtime, can be overridden via env or args.
+# Defaults below are used as fallback when detection is unavailable.
 DEVICE = "mps"
 DTYPE = "float16"
 ATTN_IMPL = "sdpa"
+
+
+def detect_device() -> str:
+    """Pick the best available torch device: mps > cuda > cpu."""
+    try:
+        import torch
+        if torch.backends.mps.is_available():
+            return "mps"
+        if torch.cuda.is_available():
+            return "cuda"
+    except ImportError:
+        pass
+    return "cpu"
+
+
+def detect_dtype(device: str) -> str:
+    """Pick a sensible dtype for the device. CPU runs float32 (float16 is slow)."""
+    return "float32" if device == "cpu" else "float16"
 
 # Generation
 MAX_NEW_TOKENS = 1024

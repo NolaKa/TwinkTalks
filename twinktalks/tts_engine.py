@@ -7,7 +7,12 @@ from typing import Callable
 import numpy as np
 import torch
 
-from twinktalks.audio_utils import generate_silence, get_duration_seconds, compute_chunk_offsets
+from twinktalks.audio_utils import (
+    generate_silence,
+    get_duration_seconds,
+    compute_chunk_offsets,
+    silence_ms_after,
+)
 from twinktalks.chunker import Chunk
 from twinktalks.config import (
     MODEL_ID,
@@ -15,8 +20,6 @@ from twinktalks.config import (
     DEFAULT_SPEAKER,
     DEFAULT_LANGUAGE,
     DEFAULT_SPEED,
-    DEVICE,
-    DTYPE,
     ATTN_IMPL,
     MAX_NEW_TOKENS,
     TOP_K,
@@ -24,8 +27,8 @@ from twinktalks.config import (
     TEMPERATURE,
     REPETITION_PENALTY,
     SAMPLE_RATE,
-    INTER_SENTENCE_SILENCE_MS,
-    INTER_PARAGRAPH_SILENCE_MS,
+    detect_device,
+    detect_dtype,
 )
 
 # Force HuggingFace to show download progress bars
@@ -50,12 +53,12 @@ class TTSEngine:
         self,
         model_id: str = MODEL_ID,
         speaker: str = DEFAULT_SPEAKER,
-        device: str = DEVICE,
+        device: str | None = None,
         model_path: str | None = None,
     ):
         self.model_id = model_id
         self.speaker = speaker
-        self.device = device
+        self.device = device if device is not None else detect_device()
         self.model_path = model_path
         self.model = None
 
@@ -124,9 +127,10 @@ class TTSEngine:
         from qwen_tts import Qwen3TTSModel
 
         dtype_map = {"float16": torch.float16, "float32": torch.float32}
-        dtype = dtype_map.get(DTYPE, torch.float16)
+        dtype_name = detect_dtype(self.device)
+        dtype = dtype_map[dtype_name]
 
-        print(f"[TwinkTalks] Device: {self.device} | Dtype: {DTYPE} | Attn: {ATTN_IMPL}")
+        print(f"[TwinkTalks] Device: {self.device} | Dtype: {dtype_name} | Attn: {ATTN_IMPL}")
         logger.info("Loading model on %s...", self.device)
 
         # 1. Local path takes priority
@@ -196,12 +200,15 @@ class TTSEngine:
         language: str = DEFAULT_LANGUAGE,
         speed: float = DEFAULT_SPEED,
         instruct: str = "",
+        speaker: str | None = None,
     ) -> tuple[np.ndarray, int]:
         """Generate audio for a single text chunk.
 
         Args:
             speed: Speaking rate, 0.5 (slow) to 2.0 (fast). Default 1.0.
             instruct: Natural language instruction for voice style (e.g. "Speak calmly").
+            speaker: Override the engine's default speaker for this call. The
+                model is shared, so switching speakers does not reload weights.
 
         Returns:
             Tuple of (waveform as numpy array, sample rate).
@@ -213,7 +220,7 @@ class TTSEngine:
             wavs, sr = self.model.generate_custom_voice(
                 text=text,
                 language=language,
-                speaker=self.speaker,
+                speaker=speaker or self.speaker,
                 speed=speed,
                 instruct=instruct,
                 max_new_tokens=MAX_NEW_TOKENS,
@@ -235,6 +242,7 @@ class TTSEngine:
         progress_callback: Callable[[int, int], None] | None = None,
         session_dir: "Path | None" = None,
         start_from: int = 0,
+        speaker: str | None = None,
     ) -> tuple[np.ndarray, int, list[int]]:
         """Generate audio for all chunks and concatenate.
 
@@ -274,7 +282,9 @@ class TTSEngine:
             waveform = None
             for attempt in range(max_retries):
                 try:
-                    waveform, sample_rate = self.synthesize(chunk.text, language, speed, instruct)
+                    waveform, sample_rate = self.synthesize(
+                        chunk.text, language, speed, instruct, speaker=speaker,
+                    )
                     break
                 except SynthesisError:
                     if attempt < max_retries - 1:
@@ -311,6 +321,7 @@ class TTSEngine:
         instruct: str = "",
         session_dir: "Path | None" = None,
         start_from: int = 0,
+        speaker: str | None = None,
     ):
         """Generate audio chunk by chunk, yielding cumulative waveform after each.
 
@@ -347,7 +358,9 @@ class TTSEngine:
             waveform = None
             for attempt in range(max_retries):
                 try:
-                    waveform, sample_rate = self.synthesize(chunk.text, language, speed, instruct)
+                    waveform, sample_rate = self.synthesize(
+                        chunk.text, language, speed, instruct, speaker=speaker,
+                    )
                     break
                 except SynthesisError:
                     if attempt < max_retries - 1:
@@ -376,12 +389,7 @@ class TTSEngine:
                 cumulative = waveform
             else:
                 prev_chunk = chunks[len(segments) - 2]
-                silence_ms = (
-                    INTER_PARAGRAPH_SILENCE_MS
-                    if prev_chunk.is_paragraph_end
-                    else INTER_SENTENCE_SILENCE_MS
-                )
-                silence = generate_silence(silence_ms, sample_rate)
+                silence = generate_silence(silence_ms_after(prev_chunk), sample_rate)
                 cumulative = np.concatenate([cumulative, silence, waveform])
 
             is_final = i + 1 == len(chunks)
@@ -402,12 +410,7 @@ def _concatenate_segments(
     for i, seg in enumerate(segments):
         parts.append(seg)
         if i < len(segments) - 1:
-            silence_ms = (
-                INTER_PARAGRAPH_SILENCE_MS
-                if chunks[i].is_paragraph_end
-                else INTER_SENTENCE_SILENCE_MS
-            )
-            parts.append(generate_silence(silence_ms, sample_rate))
+            parts.append(generate_silence(silence_ms_after(chunks[i]), sample_rate))
 
     return np.concatenate(parts)
 

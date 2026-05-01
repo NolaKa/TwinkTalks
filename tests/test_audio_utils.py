@@ -11,6 +11,7 @@ from twinktalks.audio_utils import (
     concatenate_audio,
     save_audio,
     get_duration_seconds,
+    MP3ExportError,
 )
 
 
@@ -70,6 +71,28 @@ class TestSaveAudio:
         waveform = np.zeros(100, dtype=np.float32)
         with pytest.raises(ValueError, match="Unsupported format"):
             save_audio(waveform, "/tmp/test.ogg")
+
+    def test_mp3_failure_raises_and_writes_no_wav(self, tmp_path, monkeypatch):
+        """If MP3 export fails, raise MP3ExportError and do NOT write a WAV side-file."""
+        waveform = np.zeros(100, dtype=np.float32)
+        mp3_path = tmp_path / "test.mp3"
+
+        # Force pydub.AudioSegment.export to fail
+        from pydub import AudioSegment
+        def _boom(self, *args, **kwargs):
+            raise RuntimeError("ffmpeg missing")
+        monkeypatch.setattr(AudioSegment, "export", _boom)
+
+        with pytest.raises(MP3ExportError, match="MP3 export failed"):
+            save_audio(waveform, str(mp3_path))
+
+        # No side-file should be written
+        assert not mp3_path.with_suffix(".wav").exists()
+        assert not mp3_path.exists()
+
+    def test_mp3_export_error_is_runtime_error(self):
+        """MP3ExportError stays a RuntimeError subclass for backward compat."""
+        assert issubclass(MP3ExportError, RuntimeError)
 
 
 class TestGetDuration:

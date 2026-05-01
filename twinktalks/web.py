@@ -1,7 +1,9 @@
 """Gradio web UI for TwinkTalks."""
 
 import logging
+import os
 import tempfile
+from pathlib import Path
 
 import gradio as gr
 
@@ -34,477 +36,20 @@ def _make_temp_dir() -> str:
     _temp_dirs.append(d)
     return d
 
-CUSTOM_CSS = """
-@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&display=swap');
-
-:root {
-    --bg: #0a0a0a;
-    --surface: #0f0f0f;
-    --border: #2a2000;
-    --border-bright: #4a3800;
-    --amber: #d4a017;
-    --amber-bright: #e8b82a;
-    --amber-dim: #7a5a10;
-    --amber-ghost: rgba(212,160,23,0.06);
-    --text: #d4a017;
-    --text-dim: #6b5010;
-    --mono: 'IBM Plex Mono', 'SF Mono', 'Courier New', monospace;
-}
-
-body, .gradio-container {
-    background: var(--bg) !important;
-    font-family: var(--mono) !important;
-    width: 100% !important;
-    max-width: 1100px !important;
-    margin: 0 auto !important;
-    color: var(--text) !important;
-    overflow-x: hidden !important;
-}
-
-/* Scanline overlay */
-.gradio-container::before {
-    content: "" !important;
-    position: fixed !important;
-    top: 0; left: 0; right: 0; bottom: 0 !important;
-    background: repeating-linear-gradient(
-        0deg,
-        transparent,
-        transparent 2px,
-        rgba(0,0,0,0.08) 2px,
-        rgba(0,0,0,0.08) 4px
-    ) !important;
-    pointer-events: none !important;
-    z-index: 9999 !important;
-}
-
-/* Header */
-.header-block {
-    border: none !important;
-    padding: 2rem 0 1rem !important;
-    margin-bottom: 1rem !important;
-    background: none !important;
-    text-align: center !important;
-}
-.header-block h1 {
-    font-family: var(--mono) !important;
-    font-size: 2.8rem !important;
-    font-weight: 700 !important;
-    color: var(--amber) !important;
-    letter-spacing: 0.15em !important;
-    text-transform: uppercase !important;
-    margin: 0 !important;
-    line-height: 1.2 !important;
-}
-.header-block p {
-    font-family: var(--mono) !important;
-    font-size: 0.7rem !important;
-    color: var(--text-dim) !important;
-    margin: 0.5rem 0 0 !important;
-    letter-spacing: 0.2em !important;
-    text-transform: uppercase !important;
-}
-
-/* Kill ALL border-radius — nuclear */
-*, *::before, *::after {
-    border-radius: 0 !important;
-}
-
-/* Labels */
-label, .gr-input-label, span[data-testid="block-label"] {
-    font-family: var(--mono) !important;
-    font-size: 0.7rem !important;
-    font-weight: 500 !important;
-    text-transform: uppercase !important;
-    letter-spacing: 0.12em !important;
-    color: var(--amber-dim) !important;
-}
-
-/* File upload */
-.upload-zone {
-    border: 1px solid var(--border) !important;
-    background: var(--bg) !important;
-    border-radius: 0 !important;
-    padding: 1.2rem 1rem !important;
-    transition: border-color 0.15s !important;
-    min-height: 120px !important;
-    max-width: 100% !important;
-    overflow: hidden !important;
-}
-.upload-zone:hover {
-    border-color: var(--amber) !important;
-}
-
-/* Dropdowns & inputs */
-select, input[type="text"], textarea,
-.gr-input, .gr-text-input, .gr-dropdown {
-    background: var(--bg) !important;
-    border: 1px solid var(--border) !important;
-    border-radius: 0 !important;
-    color: var(--amber) !important;
-    font-family: var(--mono) !important;
-    font-size: 0.8rem !important;
-    padding: 0.5rem 0.7rem !important;
-}
-select:focus, input:focus, textarea:focus {
-    border-color: var(--amber) !important;
-    outline: none !important;
-    box-shadow: none !important;
-}
-
-/* Checkbox — square terminal style */
-input[type="checkbox"] {
-    -webkit-appearance: none !important;
-    appearance: none !important;
-    width: 14px !important;
-    height: 14px !important;
-    border: 1px solid var(--amber-dim) !important;
-    border-radius: 0 !important;
-    background: transparent !important;
-    cursor: pointer !important;
-    position: relative !important;
-    vertical-align: middle !important;
-}
-input[type="checkbox"]:checked {
-    border-color: var(--amber) !important;
-    background: transparent !important;
-}
-input[type="checkbox"]:checked::after {
-    content: "" !important;
-    position: absolute !important;
-    top: 2px !important; left: 2px !important;
-    width: 8px !important; height: 8px !important;
-    background: var(--amber) !important;
-}
-
-/* Buttons */
-.generate-btn {
-    background: transparent !important;
-    color: var(--amber) !important;
-    border: 1px solid var(--amber) !important;
-    border-radius: 0 !important;
-    font-family: var(--mono) !important;
-    font-weight: 700 !important;
-    font-size: 0.8rem !important;
-    text-transform: uppercase !important;
-    letter-spacing: 0.15em !important;
-    padding: 0.7rem 2rem !important;
-    cursor: pointer !important;
-    transition: all 0.15s !important;
-    box-shadow: none !important;
-}
-.generate-btn:hover {
-    background: var(--amber) !important;
-    color: var(--bg) !important;
-    box-shadow: 0 0 12px rgba(212,160,23,0.3) !important;
-}
-.preview-btn {
-    background: transparent !important;
-    color: var(--amber-dim) !important;
-    border: 1px solid var(--border) !important;
-    border-radius: 0 !important;
-    font-family: var(--mono) !important;
-    font-weight: 500 !important;
-    font-size: 0.75rem !important;
-    text-transform: uppercase !important;
-    letter-spacing: 0.12em !important;
-    padding: 0.7rem 1.5rem !important;
-    cursor: pointer !important;
-    transition: all 0.15s !important;
-}
-.preview-btn:hover {
-    border-color: var(--amber-dim) !important;
-    color: var(--amber) !important;
-}
-
-/* Status bar */
-.status-bar textarea {
-    font-family: var(--mono) !important;
-    font-size: 0.75rem !important;
-    background: var(--bg) !important;
-    border: 1px solid var(--border) !important;
-    border-left: 2px solid var(--amber) !important;
-    border-radius: 0 !important;
-    color: var(--amber) !important;
-    padding: 0.6rem 0.8rem !important;
-}
-
-/* Audio player */
-.audio-output {
-    border: 1px solid var(--border) !important;
-    background: var(--surface) !important;
-    border-radius: 0 !important;
-    padding: 0.8rem !important;
-}
-
-/* Accordion */
-.gr-accordion {
-    background: var(--bg) !important;
-}
-.gr-accordion summary, .gr-accordion button {
-    font-family: var(--mono) !important;
-    font-size: 0.7rem !important;
-    text-transform: uppercase !important;
-    letter-spacing: 0.12em !important;
-    color: var(--amber-dim) !important;
-}
-/* Kill intermediate block wrapper inside accordion */
-.gr-accordion > div > div[class*="block"] {
-    border: none !important;
-    box-shadow: none !important;
-    padding: 0 !important;
-    background: none !important;
-}
-
-/* Text preview */
-.text-preview {
-    border: none !important;
-    box-shadow: none !important;
-    padding: 0 !important;
-    background: none !important;
-}
-.text-preview textarea {
-    font-family: var(--mono) !important;
-    font-size: 0.75rem !important;
-    line-height: 1.6 !important;
-    background: var(--bg) !important;
-    border: 1px solid var(--border) !important;
-    border-radius: 0 !important;
-    color: var(--amber-dim) !important;
-}
-
-/* Options row */
-.options-row {
-    gap: 0.5rem !important;
-}
-
-/* Page range — clean inline: PAGES [1] — [1] */
-.page-range {
-    gap: 0 !important;
-    align-items: flex-end !important;
-    background: none !important;
-}
-.page-range > div {
-    background: none !important;
-    padding: 0 !important;
-}
-.page-input {
-    max-width: 5.5rem !important;
-    flex: 0 0 auto !important;
-    background: none !important;
-    padding: 0 0.3rem 0 0 !important;
-}
-.page-input input[type="number"] {
-    background: var(--bg) !important;
-    border: 1px solid var(--border) !important;
-    color: var(--amber) !important;
-    font-family: var(--mono) !important;
-    font-size: 0.85rem !important;
-    text-align: center !important;
-    width: 3.5rem !important;
-    padding: 0.3rem !important;
-}
-.page-input input[type="number"]:focus {
-    border-color: var(--amber) !important;
-}
-
-/* Format radio — single line: FORMAT  [wav]  [mp3] */
-.format-inline {
-    display: flex !important;
-    flex-direction: row !important;
-    align-items: center !important;
-    gap: 0.8rem !important;
-}
-.format-inline > label,
-.format-inline > span[data-testid="block-label"] {
-    margin: 0 !important;
-    flex-shrink: 0 !important;
-}
-.format-inline > div {
-    display: flex !important;
-    flex-direction: row !important;
-    gap: 0.5rem !important;
-}
-
-/* Radio — square terminal style */
-input[type="radio"] {
-    -webkit-appearance: none !important;
-    appearance: none !important;
-    width: 14px !important;
-    height: 14px !important;
-    border: 1px solid var(--amber-dim) !important;
-    border-radius: 0 !important;
-    background: transparent !important;
-    cursor: pointer !important;
-    position: relative !important;
-    vertical-align: middle !important;
-}
-input[type="radio"]:checked {
-    border-color: var(--amber) !important;
-    background: transparent !important;
-}
-input[type="radio"]:checked::after {
-    content: "" !important;
-    position: absolute !important;
-    top: 2px !important; left: 2px !important;
-    width: 8px !important; height: 8px !important;
-    background: var(--amber) !important;
-}
-div[data-testid="radio-group"] label {
-    border-radius: 0 !important;
-}
-input[type="range"] {
-    accent-color: var(--amber) !important;
-}
-input[type="range"]::-webkit-slider-runnable-track {
-    background: var(--border) !important;
-    border-radius: 0 !important;
-    height: 2px !important;
-}
-input[type="range"]::-webkit-slider-thumb {
-    background: var(--amber) !important;
-    border: none !important;
-    border-radius: 0 !important;
-    width: 10px !important;
-    height: 10px !important;
-    margin-top: -4px !important;
-}
-.gr-slider input[type="range"],
-div[data-testid="slider"] input[type="range"] {
-    accent-color: var(--amber) !important;
-}
-.range-slider .bar,
-div[data-testid="slider"] .progress {
-    background: var(--amber) !important;
-}
-
-/* Checkbox/radio color overrides */
-.gr-check-radio input:checked {
-    background-color: var(--amber) !important;
-    border-color: var(--amber) !important;
-}
-.radio-group label.selected,
-label.selected span {
-    color: var(--amber) !important;
-    border-color: var(--amber) !important;
-}
-[class*="selected"] {
-    --color-accent: var(--amber) !important;
-}
-
-/* Dropdown arrow — square */
-select {
-    -webkit-appearance: none !important;
-    appearance: none !important;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23d4a017'/%3E%3C/svg%3E") !important;
-    background-repeat: no-repeat !important;
-    background-position: right 0.7rem center !important;
-    padding-right: 2rem !important;
-}
-
-/* Scrollbar */
-::-webkit-scrollbar { width: 4px !important; height: 4px !important; }
-::-webkit-scrollbar-track { background: var(--bg) !important; }
-::-webkit-scrollbar-thumb { background: var(--border) !important; }
-
-/* Completed files */
-.gr-files {
-    border: 1px solid var(--border) !important;
-    border-radius: 0 !important;
-    background: var(--bg) !important;
-}
-
-/* Number input */
-input[type="number"] { -moz-appearance: textfield !important; }
-input[type="number"]::-webkit-inner-spin-button { opacity: 0.5 !important; }
-
-/* Two-column layout */
-.main-row {
-    gap: 2rem !important;
-    align-items: flex-start !important;
-    flex-wrap: nowrap !important;
-    width: 100% !important;
-}
-.panel-left, .panel-right {
-    background: none !important;
-    border: none !important;
-    padding: 0 !important;
-    min-width: 0 !important;
-    width: 50% !important;
-    flex: 0 0 50% !important;
-    max-width: calc(50% - 1rem) !important;
-    overflow: hidden !important;
-    box-sizing: border-box !important;
-}
-/* All children inside panels must respect parent width */
-.panel-left > *, .panel-right > *,
-.panel-left > * > *, .panel-right > * > * {
-    max-width: 100% !important;
-    box-sizing: border-box !important;
-}
-.panel-label {
-    background: none !important;
-    border: none !important;
-    padding: 0 !important;
-    margin: 0 0 0.8rem 0 !important;
-}
-.panel-label p {
-    font-family: var(--mono) !important;
-    font-size: 1.1rem !important;
-    color: var(--amber) !important;
-    text-transform: uppercase !important;
-    letter-spacing: 0.2em !important;
-    margin: 0 !important;
-    border: none !important;
-    padding: 0 !important;
-}
-
-/* Kill stray Gradio borders/lines */
-.gradio-container .contain,
-.gradio-container .wrap,
-.gradio-container .app {
-    border: none !important;
-}
-div[class*="block"].hide-container {
-    border: none !important;
-    box-shadow: none !important;
-}
-
-/* Compact vertical spacing inside panels */
-.panel-left > div, .panel-right > div {
-    margin-bottom: 0.15rem !important;
-}
-
-/* Explicit borders only where needed */
-.upload-zone {
-    border: 1px solid var(--border) !important;
-}
-.status-bar textarea {
-    border: 1px solid var(--border) !important;
-    border-left: 2px solid var(--amber) !important;
-}
-.audio-output {
-    border: 1px solid var(--border) !important;
-}
-.gr-accordion {
-    border: 1px solid var(--border) !important;
-}
-.gr-files {
-    border: 1px solid var(--border) !important;
-}
-
-/* Footer kill */
-footer { display: none !important; }
-"""
+_CSS_PATH = Path(__file__).parent / "assets" / "twinktalks.css"
+CUSTOM_CSS = _CSS_PATH.read_text()
 
 
-def _get_engine(speaker: str):
+def _get_engine():
+    """Return the cached TTSEngine. Speaker is selected per call, not per engine —
+    Qwen3-TTS-CustomVoice takes speaker as a generation parameter, so the model
+    weights are shared across all speakers."""
     global _engine
     from twinktalks.tts_engine import TTSEngine
-    import os
 
     model_path = os.environ.get("TWINKTALKS_MODEL_PATH")
-    if _engine is None or _engine.speaker != speaker:
-        _engine = TTSEngine(speaker=speaker, model_path=model_path)
+    if _engine is None:
+        _engine = TTSEngine(model_path=model_path)
     return _engine
 
 
@@ -621,7 +166,6 @@ def _synthesize_single_file(
     """Generator: synthesize one file, yielding (status, audio_path, text) per chunk."""
     from twinktalks.chunker import chunk_text
     from twinktalks.audio_utils import save_audio, get_duration_seconds
-    import os
 
     text = _extract_and_preprocess(file_path, skip_references, skip_tables, page_range)
     chunks = chunk_text(text)
@@ -635,12 +179,12 @@ def _synthesize_single_file(
     speed_info = f" @{speed}x" if speed != 1.0 else ""
     yield f"{status_prefix}// PROCESSING — {word_count} words, {len(chunks)} chunks ({pages_info}){speed_info}", None, text
 
-    engine = _get_engine(speaker)
+    engine = _get_engine()
 
     prev_tmp = None
     final_offsets = None
     for cumulative, sample_rate, current, total_chunks, offsets in engine.synthesize_chunks_streaming(
-        chunks, language=language, speed=speed, instruct=instruct or "",
+        chunks, language=language, speed=speed, instruct=instruct or "", speaker=speaker,
     ):
         tmp_path = os.path.join(tmp_dir, f"{stem}_{current}of{total_chunks}.wav")
         save_audio(cumulative, tmp_path, sample_rate)
@@ -743,7 +287,6 @@ def process_queue(
             stem = Path(file_obj.name).stem
             file_name = Path(file_obj.name).name
             file_tmp_dir = f"{tmp_dir}/{stem}_{file_idx}"
-            import os
             os.makedirs(file_tmp_dir, exist_ok=True)
 
             final_audio = None

@@ -7,7 +7,10 @@ from unittest.mock import patch, MagicMock
 torch = pytest.importorskip("torch", reason="torch not installed")
 
 from twinktalks.chunker import Chunk
+from twinktalks.config import detect_device, detect_dtype
 from twinktalks.tts_engine import TTSEngine, SynthesisError, ModelDownloadError, _concatenate_segments
+
+_EXPECTED_DTYPE = torch.float16 if detect_dtype(detect_device()) == "float16" else torch.float32
 
 
 def _make_chunks(texts, paragraph_ends=None):
@@ -96,7 +99,7 @@ class TestLoadModelPath:
         """When model_path is set and exists, should load locally without trying HF."""
         engine = TTSEngine(model_path=str(tmp_path))
         engine.load_model()
-        mock_load.assert_called_once_with(str(tmp_path), torch.float16)
+        mock_load.assert_called_once_with(str(tmp_path), _EXPECTED_DTYPE)
         mock_post.assert_called_once()
 
     @patch.object(TTSEngine, "_load_from_huggingface")
@@ -118,7 +121,7 @@ class TestLoadModelPath:
         engine.load_model()
         mock_hf.assert_called_once()
         mock_ms.assert_called_once()
-        mock_load.assert_called_once_with("/tmp/model", torch.float16)
+        mock_load.assert_called_once_with("/tmp/model", _EXPECTED_DTYPE)
 
     @patch.object(TTSEngine, "_load_from_huggingface", side_effect=Exception("some random error"))
     def test_non_auth_error_does_not_fallback(self, mock_hf):
