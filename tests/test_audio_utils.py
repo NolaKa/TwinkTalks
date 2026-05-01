@@ -94,6 +94,60 @@ class TestSaveAudio:
         """MP3ExportError stays a RuntimeError subclass for backward compat."""
         assert issubclass(MP3ExportError, RuntimeError)
 
+    def test_save_m4b(self, tmp_path):
+        """M4B output writes a valid MP4-container file via ffmpeg."""
+        waveform = (np.random.randn(24000).astype(np.float32) * 0.3)  # 1s
+        m4b_path = tmp_path / "test.m4b"
+        save_audio(waveform, str(m4b_path), 24000)
+        assert m4b_path.exists()
+        # MP4 container files start with an ftyp atom; check first bytes
+        head = m4b_path.read_bytes()[:12]
+        assert b"ftyp" in head, f"Not an MP4 container: {head!r}"
+
+    def test_unsupported_format_message_lists_m4b(self):
+        waveform = np.zeros(100, dtype=np.float32)
+        with pytest.raises(ValueError, match="m4b"):
+            save_audio(waveform, "/tmp/test.ogg")
+
+
+class TestM4BChapters:
+    def test_remux_preserves_file(self, tmp_path):
+        """add_m4b_chapters should remux the file via ffmpeg and keep it valid."""
+        from twinktalks.audio_utils import add_m4b_chapters, AudioChapter
+        waveform = np.random.randn(48000).astype(np.float32) * 0.3  # 2s
+        m4b = tmp_path / "book.m4b"
+        save_audio(waveform, str(m4b), 24000)
+        original_bytes = m4b.read_bytes()
+
+        chapters = [
+            AudioChapter(title="Chapter 1", start_ms=0, end_ms=1000),
+            AudioChapter(title="Chapter 2", start_ms=1000, end_ms=2000),
+        ]
+        add_m4b_chapters(str(m4b), chapters)
+
+        assert m4b.exists()
+        new_bytes = m4b.read_bytes()
+        # The file should still be a valid MP4 container
+        assert b"ftyp" in new_bytes[:32]
+        # And it should have changed (chapters added)
+        assert new_bytes != original_bytes
+
+    def test_empty_chapter_list_is_noop(self, tmp_path):
+        from twinktalks.audio_utils import add_m4b_chapters
+        waveform = np.zeros(2400, dtype=np.float32)
+        m4b = tmp_path / "book.m4b"
+        save_audio(waveform, str(m4b), 24000)
+        before = m4b.read_bytes()
+        add_m4b_chapters(str(m4b), [])
+        assert m4b.read_bytes() == before
+
+    def test_wrong_extension_raises(self, tmp_path):
+        from twinktalks.audio_utils import add_m4b_chapters, AudioChapter
+        wav = tmp_path / "track.wav"
+        wav.write_bytes(b"RIFF....")
+        with pytest.raises(ValueError, match=".m4b"):
+            add_m4b_chapters(str(wav), [AudioChapter("c", 0, 100)])
+
 
 class TestGetDuration:
     def test_one_second(self):
