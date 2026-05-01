@@ -1,6 +1,7 @@
 """CLI entry point for TwinkTalks: PDF to Speech."""
 
 import argparse
+import difflib
 import logging
 import re
 import sys
@@ -13,7 +14,73 @@ from twinktalks.config import (
     DEFAULT_SPEED,
     AVAILABLE_SPEAKERS,
     DEFAULT_OUTPUT_FORMAT,
+    SPEED_MAX,
+    SPEED_MIN,
 )
+
+
+# ---------------------------------------------------------------------------
+# argparse type validators — fail at parse time with messages that name what
+# the user typed and a working example, instead of letting bad values reach
+# the synthesis pipeline and produce confusing downstream errors.
+# ---------------------------------------------------------------------------
+
+def _speed_arg(s: str) -> float:
+    try:
+        v = float(s)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"--speed must be a number, got '{s}'.")
+    if not SPEED_MIN <= v <= SPEED_MAX:
+        raise argparse.ArgumentTypeError(
+            f"--speed must be between {SPEED_MIN} and {SPEED_MAX} (got {v}). "
+            f"Try --speed 0.85 for slower or 1.2 for faster."
+        )
+    return v
+
+
+def _positive_int_arg(s: str) -> int:
+    try:
+        v = int(s)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"expected an integer, got '{s}'.")
+    if v < 1:
+        raise argparse.ArgumentTypeError(f"must be 1 or greater (got {v}).")
+    return v
+
+
+def _page_range_arg(s: str) -> tuple[int, int]:
+    if "-" not in s:
+        raise argparse.ArgumentTypeError(
+            f"--pages must be a range like '3-7' (got '{s}'). For a single page use '5-5'."
+        )
+    parts = s.split("-")
+    if len(parts) != 2 or not parts[0] or not parts[1]:
+        raise argparse.ArgumentTypeError(
+            f"--pages must be 'start-end' with both numbers, got '{s}'."
+        )
+    try:
+        a, b = int(parts[0]), int(parts[1])
+    except ValueError:
+        raise argparse.ArgumentTypeError(
+            f"--pages bounds must be integers, got '{s}'."
+        )
+    if a < 1:
+        raise argparse.ArgumentTypeError(
+            f"--pages start must be 1 or greater (got {a})."
+        )
+    if b < a:
+        raise argparse.ArgumentTypeError(
+            f"--pages '{s}' is backwards: {a} > {b}. Use '{b}-{a}' if you meant the other direction."
+        )
+    return (a, b)
+
+
+def _suggest(target: str, choices: list[str], n: int = 3) -> str:
+    """Return a 'Did you mean: foo, bar?' string for typo-friendly errors."""
+    matches = difflib.get_close_matches(target, choices, n=n, cutoff=0.4)
+    if not matches:
+        return ""
+    return f" Did you mean: {', '.join(matches)}?"
 
 
 def _process_merged(
@@ -234,21 +301,22 @@ def create_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--max-pages",
-        type=int,
+        type=_positive_int_arg,
         default=None,
-        help="Maximum number of pages to extract",
+        help="Maximum number of pages to extract (PDF only)",
     )
     parser.add_argument(
         "--pages",
-        type=str,
+        type=_page_range_arg,
         default=None,
+        metavar="START-END",
         help="Page range to extract, e.g. '3-7' or '5-5' for single page",
     )
     parser.add_argument(
         "--speed",
-        type=float,
+        type=_speed_arg,
         default=DEFAULT_SPEED,
-        help=f"Speaking speed 0.5-2.0 (default: {DEFAULT_SPEED})",
+        help=f"Speaking speed {SPEED_MIN}-{SPEED_MAX} (default: {DEFAULT_SPEED})",
     )
     parser.add_argument(
         "--instruct",
@@ -441,7 +509,23 @@ def _process_single(
     if args.resume:
         session = mgr.get_session(args.resume)
         if session is None:
-            log.error("Session not found: %s", args.resume)
+            available = mgr.list_sessions()
+            ids = [s.id for s in available]
+            hint = _suggest(args.resume, ids) if ids else ""
+            if available:
+                listing = "\n".join(
+                    f"  {s.id}  {Path(s.pdf_path).name}  chunk {s.completed_chunk}/{s.total_chunks}"
+                    for s in available[:10]
+                )
+                log.error(
+                    "Session '%s' not found.%s\nAvailable sessions:\n%s",
+                    args.resume, hint, listing,
+                )
+            else:
+                log.error(
+                    "Session '%s' not found, and no other sessions exist yet.",
+                    args.resume,
+                )
             sys.exit(1)
         start_from = session.completed_chunk
         log.info("%sResuming session %s from chunk %d/%d", prefix, session.id, start_from, session.total_chunks)
@@ -584,10 +668,19 @@ def main(argv: list[str] | None = None):
 
     # Apply --preset (overrides speaker, speed, instruct)
     if args.preset:
-        from twinktalks.presets import resolve_preset
+        from twinktalks.presets import (
+            BUILTIN_PRESETS,
+            load_user_presets,
+            resolve_preset,
+        )
         preset = resolve_preset(args.preset)
         if preset is None:
-            log.error("Preset not found: '%s'. Use --list-presets to see available presets.", args.preset)
+            all_names = list(BUILTIN_PRESETS.keys()) + [p.name for p in load_user_presets()]
+            log.error(
+                "Preset '%s' not found.%s\n"
+                "Run `twinktalks --list-presets` to see every available preset.",
+                args.preset, _suggest(args.preset, all_names),
+            )
             sys.exit(1)
         args.speaker = preset["speaker"]
         args.speed = preset["speed"]
@@ -647,27 +740,49 @@ def main(argv: list[str] | None = None):
     else:
         output_path = Path("output") / f"{input_path.stem}.{DEFAULT_OUTPUT_FORMAT}"
 
-    # Parse page range
-    page_range = None
-    if args.pages:
-        try:
-            parts = args.pages.split("-")
-            page_range = (int(parts[0]), int(parts[1]))
-        except (ValueError, IndexError):
-            log.error("Invalid --pages format. Use e.g. '3-7'")
-            sys.exit(1)
+    # --pages was validated by argparse, so it's already a tuple or None.
+    page_range: tuple[int, int] | None = args.pages
 
-    # If --chapters specified with a name/index, override page_range
+    # If --chapters specified with a name/index, override page_range.
     if args.chapters:
         from twinktalks.extractor import extract_toc
         from twinktalks.toc import find_chapter
         chapters = extract_toc(str(input_path))
+        if not chapters:
+            log.error(
+                "%s has no table of contents — `--chapter %s` only works on documents with a TOC.\n"
+                "Tip: try `--pages 3-7` to pick a page range instead, or omit the flag to render the whole file.",
+                input_path.name, args.chapters,
+            )
+            sys.exit(1)
         ch = find_chapter(chapters, args.chapters)
         if ch is None:
-            log.error("Chapter not found: '%s'. Use --show-toc to see available chapters.", args.chapters)
+            titles = [c.title for c in chapters]
+            log.error(
+                "Chapter '%s' not found in %s.%s\n"
+                "Run `twinktalks %s --show-toc` to list every chapter, or use the chapter index (e.g. --chapter 3).",
+                args.chapters, input_path.name, _suggest(args.chapters, titles),
+                input_path,
+            )
             sys.exit(1)
         page_range = (ch.start_page, ch.end_page)
         log.info("Chapter: %s (pages %d-%d)", ch.title, ch.start_page, ch.end_page)
+
+    # Warn if the user asked for chapter markers but picked a format that
+    # can't carry them — easy to miss otherwise.
+    if args.chapter_markers and output_path.suffix.lower() not in (".mp3", ".m4b"):
+        log.warning(
+            "--chapter-markers has no effect on %s output (only .mp3 and .m4b carry chapter atoms). "
+            "Use -o %s.mp3 or -o %s.m4b to keep them.",
+            output_path.suffix, output_path.stem, output_path.stem,
+        )
+
+    # Make sure we can actually write the output before kicking off a 20-minute synthesis run.
+    try:
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+    except (PermissionError, OSError) as e:
+        log.error("Cannot create output directory %s: %s", output_path.parent, e)
+        sys.exit(1)
 
     _process_single(input_path, output_path, args, page_range=page_range, log=log)
 
