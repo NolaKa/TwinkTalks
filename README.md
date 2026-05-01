@@ -6,8 +6,6 @@
 
 Convert academic papers, textbooks, e-books, notes, and web pages into natural-sounding audiobooks.
 
-![screenshot](assets/screenshot-main.png)
-
 </div>
 
 ---
