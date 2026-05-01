@@ -25,3 +25,7 @@ models/
 *.swp
 *.swo
 *~
+
+# Claude Code
+CLAUDE.md
+.claude/

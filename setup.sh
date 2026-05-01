@@ -12,9 +12,14 @@ fi
 echo "Installing system dependencies..."
 brew install portaudio ffmpeg sox 2>/dev/null || echo "Some brew packages already installed."
 
-# Python venv
+# Python venv — pin to 3.12 explicitly because numpy<2.0 (required by qwen-tts)
+# does not yet ship wheels for newer Python versions and the install will break.
 echo "Creating Python 3.12 virtual environment..."
-python3 -m venv .venv
+if ! command -v python3.12 >/dev/null 2>&1; then
+    echo "Error: python3.12 not found. Install it via 'brew install python@3.12'."
+    exit 1
+fi
+python3.12 -m venv .venv
 source .venv/bin/activate
 
 echo "Installing Python dependencies..."

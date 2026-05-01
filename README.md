@@ -36,6 +36,7 @@ Convert academic papers, textbooks, and e-books into natural-sounding audio.
 ## Requirements
 
 - **Apple Silicon Mac** (M1/M2/M3/M4) with **32GB+ unified memory** recommended
+- Auto-detected device: MPS (Apple Silicon) → CUDA (NVIDIA) → CPU fallback
 - Python 3.12+
 - System deps: `portaudio`, `ffmpeg`, `sox` (installed via Homebrew)
 
@@ -46,6 +47,13 @@ git clone https://github.com/NolaKa/TwinkTalks.git
 cd TwinkTalks
 chmod +x setup.sh && ./setup.sh
 source .venv/bin/activate
+```
+
+Or install as an editable package:
+
+```bash
+python3.12 -m venv .venv && source .venv/bin/activate
+pip install -e .
 ```
 
 ## Usage
@@ -174,8 +182,8 @@ python -m twinktalks textbook.pdf --chapter-markers -o textbook.mp3
 | Calm Narrator | Aiden | 0.9x | Speak in a calm, measured, soothing tone... |
 | Energetic | Ryan | 1.1x | Speak with energy and enthusiasm... |
 | Warm & Gentle | Aria | 0.9x | Speak warmly and gently... |
-| Lecture/Academic | Leo | 0.95x | Speak clearly like a university professor... |
-| Audiobook | Aiden | 0.85x | Speak like a professional audiobook narrator... |
+| Lecture/Academic | Aiden | 0.85x | Speak like a university professor giving a clear, structured lecture... |
+| Audiobook | Ryan | 0.95x | Speak like a professional audiobook narrator... |
 | Fast Summary | Ryan | 1.3x | Speak quickly and concisely... |
 | Whisper | Aria | 0.8x | Speak in a soft, intimate whisper... |
 
@@ -197,15 +205,17 @@ twinktalks/
 ├── session.py            # SessionManager — per-chunk WAV saving, resume support
 ├── presets.py            # Built-in voice presets + user favorites (~/.twinktalks/presets.json)
 ├── cli.py                # CLI with batch chapter processing, chapter marker embedding
-└── web.py                # Gradio web UI with streaming playback, file queue, format selection
+├── web.py                # Gradio web UI with streaming playback, file queue, format selection
+└── assets/
+    └── twinktalks.css    # Web UI CSS (loaded at startup by web.py)
 ```
 
 ## Model
 
 Uses [Qwen3-TTS-12Hz-1.7B-CustomVoice](https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice) with:
-- `device_map="mps"` (Apple Silicon Metal)
+- `device_map` auto-detected: MPS (Apple Silicon Metal) → CUDA (NVIDIA) → CPU
 - `attn_implementation="sdpa"` (FlashAttention unavailable on macOS)
-- `dtype=float16`
+- `dtype=float16` on MPS/CUDA, `float32` on CPU
 
 The model (~3.5GB) downloads automatically on first run. **No HuggingFace account is required** — the model is public. If you hit rate limits, TwinkTalks will automatically try [ModelScope](https://modelscope.cn/models/Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice) as a fallback.
 
@@ -274,4 +284,4 @@ source .venv/bin/activate
 python -m pytest tests/ -v
 ```
 
-148 unit tests covering: text preprocessor, chunker (including page-aware chunking), PDF extractor, EPUB extractor, extractor router, TOC, sessions, presets, CLI batch helpers, chapter markers (ID3 embedding + reading back), chunk offset computation, chunk-to-chapter mapping.
+181 unit tests covering: text preprocessor, chunker (including page-aware chunking and cross-page paragraph merging), PDF extractor, EPUB extractor, extractor router, TOC, sessions, presets, CLI batch helpers, web helpers, TTS engine (model mocked), chapter markers (ID3 embedding + reading back), chunk offset computation, chunk-to-chapter mapping, and audio export semantics.
