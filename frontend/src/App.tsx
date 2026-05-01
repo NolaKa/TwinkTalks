@@ -242,6 +242,24 @@ export function App() {
     }
   }, [file, settings, busy])
 
+  // Prevent the browser from opening files dropped anywhere outside our
+  // explicit drop targets. Without this, dropping on padding / FileCard /
+  // sidebar makes the browser navigate to the file instead of uploading.
+  useEffect(() => {
+    const onDragOver = (e: DragEvent) => {
+      if (e.dataTransfer?.types.includes('Files')) e.preventDefault()
+    }
+    const onDrop = (e: DragEvent) => {
+      if (e.dataTransfer?.types.includes('Files')) e.preventDefault()
+    }
+    window.addEventListener('dragover', onDragOver)
+    window.addEventListener('drop', onDrop)
+    return () => {
+      window.removeEventListener('dragover', onDragOver)
+      window.removeEventListener('drop', onDrop)
+    }
+  }, [])
+
   // ⌘⏎ shortcut
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -270,7 +288,11 @@ export function App() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
             {file ? (
               <>
-                <FileCard file={file} onReplace={handleReplace} />
+                <FileCard
+                  file={file}
+                  onReplace={handleReplace}
+                  onPick={handleUpload}
+                />
                 {file.needs_ocr && (
                   <ScannedNotice forced={settings.ocr && !file.needs_ocr} />
                 )}

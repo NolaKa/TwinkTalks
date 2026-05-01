@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import type { FileMetadata } from '../types'
 
 function fmtBytes(n: number) {
@@ -20,18 +21,37 @@ function pluralUnit(n: number, ext: string) {
   return ''
 }
 
-export function FileCard({ file, onReplace }: { file: FileMetadata; onReplace: () => void }) {
+type Props = {
+  file: FileMetadata
+  onReplace: () => void
+  onPick: (file: File) => void  // accept a fresh drop on the card itself
+}
+
+export function FileCard({ file, onReplace, onPick }: Props) {
   const ext = (file.name.split('.').pop() || '').toUpperCase()
+  const [drag, setDrag] = useState(false)
   return (
     <div
+      onDragOver={e => {
+        e.preventDefault()
+        setDrag(true)
+      }}
+      onDragLeave={() => setDrag(false)}
+      onDrop={e => {
+        e.preventDefault()
+        setDrag(false)
+        const f = e.dataTransfer.files[0]
+        if (f) onPick(f)
+      }}
       style={{
-        border: '1px solid var(--line)',
+        border: '1px ' + (drag ? 'dashed var(--accent)' : 'solid var(--line)'),
+        background: drag ? 'color-mix(in srgb, var(--accent) 5%, var(--bg))' : 'var(--bg)',
         borderRadius: 12,
-        background: 'var(--bg)',
         padding: 16,
         display: 'flex',
         alignItems: 'center',
         gap: 14,
+        transition: 'border-color 120ms ease, background 120ms ease',
       }}
     >
       <div
@@ -75,6 +95,7 @@ export function FileCard({ file, onReplace }: { file: FileMetadata; onReplace: (
       </div>
       <button
         onClick={onReplace}
+        title="Drop a new file on this card, or click to clear"
         style={{
           background: 'transparent',
           border: '1px solid var(--line)',
@@ -82,6 +103,7 @@ export function FileCard({ file, onReplace }: { file: FileMetadata; onReplace: (
           padding: '6px 12px',
           fontSize: 12,
           color: 'var(--dim)',
+          cursor: 'pointer',
         }}
       >
         Replace
