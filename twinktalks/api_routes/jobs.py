@@ -124,6 +124,13 @@ def _library_dir() -> Path:
     return d
 
 
+def _previews_dir() -> Path:
+    """Voice previews go here so they don't clutter the user's audiobook library."""
+    d = Path.home() / ".twinktalks" / "previews"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
 def _emit(job: Job, event_type: str, data: dict | None = None) -> None:
     job.queue.put({"type": event_type, "data": data or {}})
 
@@ -244,10 +251,12 @@ def _run_synthesis(job: Job) -> None:
             if offsets is not None:
                 final_offsets = offsets
 
-        # Save final audio
+        # Save final audio. Preview jobs go to a separate previews dir so they
+        # don't show up in the user's audiobook library.
         ext = s["format"] if s["format"] in ("wav", "mp3", "m4b") else "wav"
         stem = Path(stored.name).stem
-        final_path = _library_dir() / f"{stem}_{job.id}.{ext}"
+        target_dir = _previews_dir() if s.get("preview_only") else _library_dir()
+        final_path = target_dir / f"{stem}_{job.id}.{ext}"
         save_audio(cumulative, str(final_path), sample_rate)
 
         if ext in ("mp3", "m4b"):

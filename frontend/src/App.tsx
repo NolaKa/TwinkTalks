@@ -199,23 +199,27 @@ export function App() {
     }
   }, [])
 
-  const handleGenerate = useCallback(async () => {
+  const startJobAndStream = useCallback(async (
+    starter: () => Promise<{ job_id: string; status: string }>,
+    mode: 'generate' | 'preview',
+  ) => {
     if (!file || busy) return
     setError(null)
     setBusy(true)
     try {
-      const { job_id } = await api.startJob({ file_id: file.id, ...settings })
+      const { job_id } = await starter()
       eventSourceRef.current?.close()
       const es = new EventSource(api.jobStreamUrl(job_id))
       eventSourceRef.current = es
 
+      const baseFilename = file.title || file.name
       setActiveJob({
         job_id,
         current: 0,
         total: 1,
         duration_s: 0,
         eta_s: 0,
-        filename: file.title || file.name,
+        filename: mode === 'preview' ? `Preview · ${baseFilename}` : baseFilename,
         phase: 'synthesizing',
       })
 
@@ -249,22 +253,26 @@ export function App() {
         es.close()
         setBusy(false)
         setActiveJob(null)
-        const stem = file.title || file.name.replace(/\.[^.]+$/, '')
+        const stem = (file.title || file.name).replace(/\.[^.]+$/, '')
+        const ext = data.format || (mode === 'preview' ? 'wav' : 'mp3')
         setCurrentAudio({
           url: data.audio_url,
-          name: `${stem}.${data.format || 'mp3'}`,
+          name: mode === 'preview' ? `${stem}_preview.${ext}` : `${stem}.${ext}`,
         })
         if (audioRef.current) {
           audioRef.current.src = data.audio_url
           audioRef.current.play().catch(() => {})
         }
-        api.library().then(setLibrary).catch(() => {})
+        // Previews don't land in the library, so don't bother refreshing it.
+        if (mode === 'generate') {
+          api.library().then(setLibrary).catch(() => {})
+        }
       })
 
       es.addEventListener('error', (ev: MessageEvent) => {
         const data = ev.data ? JSON.parse(ev.data) : { message: 'Stream closed unexpectedly' }
         es.close()
-        setError(data.message || 'Synthesis failed')
+        setError(data.message || `${mode === 'preview' ? 'Preview' : 'Synthesis'} failed`)
         setBusy(false)
         setActiveJob(null)
       })
@@ -272,7 +280,23 @@ export function App() {
       setError(prettyError(e))
       setBusy(false)
     }
-  }, [file, settings, busy])
+  }, [file, busy])
+
+  const handleGenerate = useCallback(() => {
+    if (!file) return
+    return startJobAndStream(
+      () => api.startJob({ file_id: file.id, ...settings }),
+      'generate',
+    )
+  }, [file, settings, startJobAndStream])
+
+  const handlePreview = useCallback(() => {
+    if (!file) return
+    return startJobAndStream(
+      () => api.startPreviewJob({ file_id: file.id, ...settings }),
+      'preview',
+    )
+  }, [file, settings, startJobAndStream])
 
   // Prevent the browser from opening files dropped anywhere outside our
   // explicit drop targets. Without this, dropping on padding / FileCard /
@@ -417,12 +441,47 @@ export function App() {
               )}
             </div>
 
-            <div style={{ position: 'sticky', bottom: 24, zIndex: 5 }}>
-              <GenerateButton
-                onClick={handleGenerate}
+            <div
+              style={{
+                position: 'sticky',
+                bottom: 24,
+                zIndex: 5,
+                display: 'flex',
+                gap: 8,
+              }}
+            >
+              <button
+                onClick={handlePreview}
                 disabled={!file || busy}
-                label={busy ? 'Working…' : 'Generate audio'}
-              />
+                title="Render only the first chunk so you can audition the voice + speed before committing."
+                style={{
+                  background: 'var(--bg)',
+                  color: !file || busy ? 'var(--dim)' : 'var(--ink)',
+                  border: '1px solid var(--line)',
+                  borderRadius: 8,
+                  padding: '14px 18px',
+                  fontSize: 13,
+                  fontWeight: 500,
+                  cursor: !file || busy ? 'not-allowed' : 'pointer',
+                  fontFamily: 'inherit',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  flexShrink: 0,
+                }}
+              >
+                <svg width="11" height="11" viewBox="0 0 11 11" fill="currentColor">
+                  <path d="M3 1.5l6 4-6 4z" />
+                </svg>
+                Preview
+              </button>
+              <div style={{ flex: 1 }}>
+                <GenerateButton
+                  onClick={handleGenerate}
+                  disabled={!file || busy}
+                  label={busy ? 'Working…' : 'Generate audio'}
+                />
+              </div>
             </div>
           </div>
 
