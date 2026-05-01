@@ -2,9 +2,9 @@
 
 # TWINKTALKS
 
-**PDF & EPUB to speech — powered by Qwen3-TTS**
+**PDF, EPUB, Markdown, HTML, and TXT to speech — powered by Qwen3-TTS**
 
-Convert academic papers, textbooks, and e-books into natural-sounding audio.
+Convert academic papers, textbooks, e-books, notes, and web pages into natural-sounding audiobooks.
 
 ![screenshot](assets/screenshot-main.png)
 
@@ -14,13 +14,19 @@ Convert academic papers, textbooks, and e-books into natural-sounding audio.
 
 ## Features
 
-- **PDF + EPUB support** — handles multi-column academic papers (pdfplumber with `layout=True` + PyMuPDF fallback) and e-books (ebooklib + BeautifulSoup)
-- **File queue** — upload multiple PDF/EPUB files at once, processes them sequentially with per-file progress tracking
+- **Multi-format input** — PDF (multi-column papers via pdfplumber `layout=True` + PyMuPDF fallback), EPUB (ebooklib + BeautifulSoup), Markdown (heading-aware), plain text, HTML
+- **OCR for scanned PDFs** — `--ocr` runs ocrmypdf (Tesseract) before extraction, opening up old books and image-only PDFs
+- **M4B audiobook output** — proper audiobook container with embedded chapter atoms; works in iOS Books, Apple Podcasts
+- **Auto-tagged audio** — title, author, and a cover image (rendered first PDF page or EPUB cover) embedded in MP3/M4B via mutagen
+- **Single-file audiobook from chapters** — `--merge-chapters` concatenates every TOC chapter into one M4B with chapter markers
+- **10-second voice preview** — `--preview` (CLI) or PREVIEW VOICE button (web) renders just the first chunk so you can audition the voice before committing to a long run
+- **Auto-detect language** — pick "Auto" / pass `--language Auto` and TwinkTalks runs langdetect on the first ~500 chars to pick the right Qwen3-TTS language
+- **File queue** — upload multiple files at once, processes them sequentially with per-file progress tracking
 - **Streaming playback** — web UI plays audio progressively as chunks are generated, no waiting for the full file
-- **Chapter markers in MP3** — embeds ID3v2 CHAP/CTOC frames so you can skip between chapters in VLC, Apple Podcasts, Overcast, and other players
-- **WAV & MP3 export** — choose output format in the web UI or via file extension in CLI
-- **Batch processing** — `--chapters all` generates a separate audio file per chapter
-- **Table of contents & chapters** — auto-detects TOC from PDF (PyMuPDF `get_toc()`) or EPUB (spine items), select specific chapters by name or index
+- **Chapter markers in MP3** — embeds ID3v2 CHAP/CTOC frames so you can skip between chapters in VLC, Apple Podcasts, Overcast
+- **WAV / MP3 / M4B export** — choose output format in the web UI or via file extension in CLI
+- **Batch processing** — `--chapters all` generates a separate audio file per chapter (or one merged M4B with `--merge-chapters`)
+- **Table of contents & chapters** — auto-detects TOC from PDF (PyMuPDF `get_toc()`), EPUB (spine items), Markdown headings, or HTML `<h1>`-`<h3>`
 - **Skip tables** — excludes diagnostic tables, DSM criteria, etc. from speech output via `find_tables()` bbox exclusion
 - **Voice modulation** — natural language `instruct` parameter passed to `generate_custom_voice()` controls emotion, tone, and style (e.g. "Speak calmly like an audiobook narrator")
 - **8 built-in voice presets** — Default, Calm Narrator, Energetic, Warm & Gentle, Lecture/Academic, Audiobook, Fast Summary, Whisper
@@ -39,6 +45,7 @@ Convert academic papers, textbooks, and e-books into natural-sounding audio.
 - Auto-detected device: MPS (Apple Silicon) → CUDA (NVIDIA) → CPU fallback
 - Python 3.12+
 - System deps: `portaudio`, `ffmpeg`, `sox` (installed via Homebrew)
+- Optional for OCR: `tesseract`, `ghostscript`, `qpdf` (also via Homebrew) plus `pip install ocrmypdf`
 
 ## Quick Start
 
@@ -88,12 +95,24 @@ After all files complete, a **COMPLETED FILES** panel appears with download link
 ### CLI
 
 ```bash
-# Basic: PDF or EPUB to WAV
+# Basic: any supported format to WAV/MP3/M4B
 python -m twinktalks paper.pdf -o output.wav
-python -m twinktalks book.epub -o output.wav
+python -m twinktalks book.epub -o output.m4b
+python -m twinktalks notes.md -o notes.mp3
+python -m twinktalks article.html -o article.wav
 
-# Choose voice and language
-python -m twinktalks paper.pdf -o output.mp3 --speaker Ryan --language English
+# Choose voice and language (or "Auto" for auto-detect)
+python -m twinktalks paper.pdf -o output.mp3 --speaker Ryan --language Auto
+
+# 10-second voice preview before committing to the full run
+python -m twinktalks paper.pdf --preview -o output.mp3
+
+# OCR a scanned PDF (requires brew: tesseract ghostscript qpdf + pip: ocrmypdf)
+python -m twinktalks scanned.pdf --ocr -o output.mp3
+python -m twinktalks polish_book.pdf --ocr --ocr-language pol -o output.mp3
+
+# Single audiobook M4B with all chapters merged + embedded chapter markers
+python -m twinktalks textbook.pdf --chapters all --merge-chapters -o book.m4b
 
 # Preview extracted text (no TTS)
 python -m twinktalks paper.pdf --dry-run
@@ -204,7 +223,12 @@ twinktalks/
 ├── toc.py                # TOC extraction (PyMuPDF get_toc()), Chapter dataclass
 ├── session.py            # SessionManager — per-chunk WAV saving, resume support
 ├── presets.py            # Built-in voice presets + user favorites (~/.twinktalks/presets.json)
-├── cli.py                # CLI with batch chapter processing, chapter marker embedding
+├── text_extractor.py     # Plain text and Markdown (with markup stripping + heading TOC)
+├── html_extractor.py     # Standalone HTML files (BeautifulSoup, h1-h3 TOC)
+├── ocr.py                # ocrmypdf wrapper for scanned PDF preprocessing
+├── book_metadata.py      # Extract title/author/cover from PDF (fitz) and EPUB (DC metadata)
+├── language_detect.py    # langdetect → Qwen3-TTS language name mapping
+├── cli.py                # CLI with batch + merge-chapters, preview, OCR, chapter markers
 ├── web.py                # Gradio web UI with streaming playback, file queue, format selection
 └── assets/
     └── twinktalks.css    # Web UI CSS (loaded at startup by web.py)
@@ -284,4 +308,4 @@ source .venv/bin/activate
 python -m pytest tests/ -v
 ```
 
-181 unit tests covering: text preprocessor, chunker (including page-aware chunking and cross-page paragraph merging), PDF extractor, EPUB extractor, extractor router, TOC, sessions, presets, CLI batch helpers, web helpers, TTS engine (model mocked), chapter markers (ID3 embedding + reading back), chunk offset computation, chunk-to-chapter mapping, and audio export semantics.
+241 unit tests covering: text preprocessor, chunker (page-aware + cross-page paragraph merging), PDF extractor (with mocked OCR), EPUB extractor, plain-text/Markdown/HTML extractors, extractor router, TOC, sessions, presets, CLI batch helpers and flags, web helpers, TTS engine (model mocked), chapter markers (MP3 ID3 + M4B chapter atoms), chunk offset computation, chunk-to-chapter mapping, audio export (WAV/MP3/M4B), metadata embedding (title, author, cover art), and language auto-detection.

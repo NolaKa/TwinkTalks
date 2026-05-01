@@ -144,7 +144,10 @@ def on_chapter_select(chapter_choice, files):
     return gr.update(), gr.update()
 
 
-def _extract_and_preprocess(file_path: str, skip_references: bool, skip_tables: bool, page_range=None) -> str:
+def _extract_and_preprocess(
+    file_path: str, skip_references: bool, skip_tables: bool,
+    page_range=None, ocr: bool = False,
+) -> str:
     """Shared extract + preprocess pipeline."""
     from twinktalks.extractor import extract_text
     from twinktalks.text_preprocessor import preprocess
@@ -153,6 +156,7 @@ def _extract_and_preprocess(file_path: str, skip_references: bool, skip_tables: 
         skip_references=skip_references,
         page_range=page_range,
         skip_tables=skip_tables,
+        ocr=ocr,
     )
     return preprocess(text)
 
@@ -162,18 +166,23 @@ def _synthesize_single_file(
     page_range, speaker, language, speed, skip_references, skip_tables, instruct,
     output_format: str = "wav",
     status_prefix: str = "",
+    ocr: bool = False,
 ):
     """Generator: synthesize one file, yielding (status, audio_path, text) per chunk."""
     from twinktalks.chunker import chunk_text
     from twinktalks.audio_utils import save_audio, get_duration_seconds
 
-    text = _extract_and_preprocess(file_path, skip_references, skip_tables, page_range)
+    text = _extract_and_preprocess(file_path, skip_references, skip_tables, page_range, ocr=ocr)
     chunks = chunk_text(text)
     word_count = len(text.split())
 
     if not chunks:
         yield f"{status_prefix}// NO TEXT", None, text
         return
+
+    # Auto-detect language if user picked "Auto"
+    from twinktalks.language_detect import resolve_language
+    language = resolve_language(language, text)
 
     pages_info = f"p.{page_range[0]}-{page_range[1]}" if page_range else "all"
     speed_info = f" @{speed}x" if speed != 1.0 else ""
@@ -200,15 +209,26 @@ def _synthesize_single_file(
         if current < total_chunks:
             yield f"{status_prefix}// GENERATING — chunk {current}/{total_chunks} — {duration:.1f}s", tmp_path, text
         else:
-            ext = output_format if output_format in ("wav", "mp3") else "wav"
+            ext = output_format if output_format in ("wav", "mp3", "m4b") else "wav"
             final_path = os.path.join(tmp_dir, f"{stem}.{ext}")
 
-            if ext == "mp3":
+            if ext in ("mp3", "m4b"):
                 save_audio(cumulative, final_path, sample_rate)
                 os.unlink(tmp_path)
             else:
                 os.rename(tmp_path, final_path)
             prev_tmp = None
+
+            # Embed metadata (title, author, cover) for tagged formats
+            if ext in ("mp3", "m4b"):
+                try:
+                    from twinktalks.book_metadata import extract_metadata
+                    from twinktalks.audio_utils import embed_metadata
+                    meta = extract_metadata(file_path)
+                    if meta.title or meta.author or meta.has_cover():
+                        embed_metadata(final_path, meta)
+                except Exception as e:
+                    logger.warning("Metadata embedding failed: %s", e)
 
             # Embed chapter markers in MP3 if TOC is available
             if ext == "mp3" and final_offsets:
@@ -253,6 +273,7 @@ def process_queue(
     skip_tables: bool,
     output_format: str,
     instruct: str = "",
+    ocr: bool = False,
 ):
     """Process one or multiple files. Generator yielding (status, audio, text, completed_files)."""
     if files is None or len(files) == 0:
@@ -274,7 +295,7 @@ def process_queue(
             for status, audio, text in _synthesize_single_file(
                 pdf_file.name, stem, tmp_dir,
                 page_range, speaker, language, speed, skip_references, skip_tables, instruct,
-                output_format=fmt,
+                output_format=fmt, ocr=ocr,
             ):
                 yield status, audio, text, None
             return
@@ -294,7 +315,7 @@ def process_queue(
             for status, audio, text in _synthesize_single_file(
                 file_obj.name, stem, file_tmp_dir,
                 None, speaker, language, speed, skip_references, skip_tables, instruct,
-                output_format=fmt,
+                output_format=fmt, ocr=ocr,
                 status_prefix=f"// QUEUE {file_idx}/{len(files)} — \"{file_name}\" — ",
             ):
                 final_audio = audio
@@ -315,7 +336,10 @@ def process_queue(
         yield f"// ERROR — {e}", None, "", None
 
 
-def extract_only(files, page_start, page_end, page_info, skip_references: bool, skip_tables: bool) -> str:
+def extract_only(
+    files, page_start, page_end, page_info,
+    skip_references: bool, skip_tables: bool, ocr: bool = False,
+) -> str:
     """Extract and preprocess text without TTS."""
     if not files or len(files) == 0:
         return "// NO FILE"
@@ -324,7 +348,50 @@ def extract_only(files, page_start, page_end, page_info, skip_references: bool, 
     total = int(page_info) if page_info else 9999
     page_range = _get_page_range(page_start, page_end, total)
 
-    return _extract_and_preprocess(pdf_file.name, skip_references, skip_tables, page_range)
+    return _extract_and_preprocess(pdf_file.name, skip_references, skip_tables, page_range, ocr=ocr)
+
+
+def preview_voice(
+    files, page_start, page_end, page_info,
+    speaker: str, language: str, speed: float,
+    skip_references: bool, skip_tables: bool, instruct: str = "",
+    ocr: bool = False,
+):
+    """Synthesize only the first chunk so the user can audition the voice quickly."""
+    if not files or len(files) == 0:
+        return "// NO FILE", None
+
+    from pathlib import Path as _Path
+    from twinktalks.chunker import chunk_text
+    from twinktalks.audio_utils import save_audio, get_duration_seconds
+
+    pdf_file = files[0]
+    total = int(page_info) if page_info else 9999
+    page_range = _get_page_range(page_start, page_end, total)
+
+    try:
+        text = _extract_and_preprocess(pdf_file.name, skip_references, skip_tables, page_range, ocr=ocr)
+        chunks = chunk_text(text)
+        if not chunks:
+            return "// NO TEXT TO PREVIEW", None
+
+        from twinktalks.language_detect import resolve_language
+        resolved_language = resolve_language(language, text)
+
+        engine = _get_engine()
+        waveform, sr = engine.synthesize(
+            chunks[0].text, language=resolved_language, speed=speed,
+            instruct=instruct or "", speaker=speaker,
+        )
+        tmp_dir = _make_temp_dir()
+        stem = _Path(pdf_file.name).stem
+        out = os.path.join(tmp_dir, f"{stem}_preview.wav")
+        save_audio(waveform, out, sr)
+        duration = get_duration_seconds(waveform, sr)
+        return f"// PREVIEW — {duration:.1f}s, first chunk ({len(chunks[0].text)} chars)", out
+    except Exception as e:
+        logger.exception("Preview failed: %s", e)
+        return f"// ERROR — {e}", None
 
 
 def create_app() -> gr.Blocks:
@@ -345,7 +412,7 @@ def create_app() -> gr.Blocks:
 
                 pdf_input = gr.File(
                     label="FILE",
-                    file_types=[".pdf", ".epub"],
+                    file_types=[".pdf", ".epub", ".md", ".txt", ".html", ".htm"],
                     file_count="multiple",
                     elem_classes=["upload-zone"],
                 )
@@ -389,9 +456,10 @@ def create_app() -> gr.Blocks:
                 with gr.Row(elem_classes=["options-row"]):
                     skip_refs = gr.Checkbox(value=True, label="SKIP REFERENCES")
                     skip_tables = gr.Checkbox(value=False, label="SKIP TABLES")
+                    ocr_enabled = gr.Checkbox(value=False, label="OCR (SCANNED PDF)")
 
                 output_format = gr.Radio(
-                    choices=["wav", "mp3"], value="wav", label="FORMAT",
+                    choices=["wav", "mp3", "m4b"], value="wav", label="FORMAT",
                     elem_classes=["format-inline"],
                 )
 
@@ -418,6 +486,7 @@ def create_app() -> gr.Blocks:
                 # Action buttons
                 with gr.Row():
                     preview_btn = gr.Button("PREVIEW TEXT", elem_classes=["preview-btn"])
+                    preview_voice_btn = gr.Button("PREVIEW VOICE", elem_classes=["preview-btn"])
                     generate_btn = gr.Button("GENERATE", variant="primary", elem_classes=["generate-btn"])
 
             # ---- RIGHT COLUMN: Output ----
@@ -457,12 +526,17 @@ def create_app() -> gr.Blocks:
         )
         preview_btn.click(
             fn=extract_only,
-            inputs=[pdf_input, page_start, page_end, page_info, skip_refs, skip_tables],
+            inputs=[pdf_input, page_start, page_end, page_info, skip_refs, skip_tables, ocr_enabled],
             outputs=[text_preview],
+        )
+        preview_voice_btn.click(
+            fn=preview_voice,
+            inputs=[pdf_input, page_start, page_end, page_info, speaker, language, speed_slider, skip_refs, skip_tables, instruct_box, ocr_enabled],
+            outputs=[status, audio_output],
         )
         generate_btn.click(
             fn=process_queue,
-            inputs=[pdf_input, page_start, page_end, page_info, speaker, language, speed_slider, skip_refs, skip_tables, output_format, instruct_box],
+            inputs=[pdf_input, page_start, page_end, page_info, speaker, language, speed_slider, skip_refs, skip_tables, output_format, instruct_box, ocr_enabled],
             outputs=[status, audio_output, text_preview, completed_files],
         )
 

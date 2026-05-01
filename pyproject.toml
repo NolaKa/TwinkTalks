@@ -22,10 +22,13 @@ dependencies = [
     "mutagen>=1.47",
     "tqdm>=4.66",
     "gradio>=5.0",
+    "langdetect>=1.0",
 ]
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0"]
+# Scanned-PDF OCR. Also requires system: brew install tesseract ghostscript qpdf
+ocr = ["ocrmypdf>=16.0"]
 
 [project.scripts]
 twinktalks = "twinktalks.cli:main"

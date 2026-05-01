@@ -16,6 +16,131 @@ from twinktalks.config import (
 )
 
 
+def _process_merged(
+    input_path: Path,
+    output_path: Path,
+    args,
+    log: logging.Logger,
+):
+    """Synthesize every TOC chapter and merge into a single audiobook file.
+
+    Writes one audio file (typically .m4b) with chapter atoms pointing at each
+    chapter's start time. Used when --chapters all is combined with --merge-chapters.
+    """
+    import numpy as np
+    from twinktalks.extractor import extract_text, extract_toc
+    from twinktalks.text_preprocessor import preprocess
+    from twinktalks.chunker import chunk_text
+    from twinktalks.tts_engine import TTSEngine
+    from twinktalks.audio_utils import (
+        AudioChapter,
+        add_chapter_markers,
+        add_m4b_chapters,
+        embed_metadata,
+        generate_silence,
+        get_duration_seconds,
+        save_audio,
+    )
+    from twinktalks.book_metadata import extract_metadata
+
+    INTER_CHAPTER_SILENCE_MS = 1500
+
+    chapters = extract_toc(str(input_path))
+    if not chapters:
+        log.error("No table of contents found. Cannot use --merge-chapters.")
+        sys.exit(1)
+
+    engine = TTSEngine(speaker=args.speaker, model_path=getattr(args, "model_path", None))
+
+    out_ext = output_path.suffix.lower()
+    if out_ext not in (".mp3", ".m4b", ".wav"):
+        log.error("--merge-chapters requires .m4b, .mp3, or .wav output. Got: %s", out_ext)
+        sys.exit(1)
+
+    segments: list[np.ndarray] = []
+    audio_chapters: list[AudioChapter] = []
+    cumulative_ms = 0
+    sample_rate: int | None = None
+
+    for idx, ch in enumerate(chapters, 1):
+        log.info("[%d/%d] %s (pages %d-%d)", idx, len(chapters), ch.title, ch.start_page, ch.end_page)
+
+        text = preprocess(extract_text(
+            str(input_path),
+            skip_references=not args.no_skip_references,
+            page_range=(ch.start_page, ch.end_page),
+            skip_tables=args.skip_tables,
+        ))
+        chunks = chunk_text(text)
+        if not chunks:
+            log.warning("[%d/%d] no text — skipping.", idx, len(chapters))
+            continue
+
+        progress, close_progress = _build_progress(
+            f"[{idx}/{len(chapters)}] ", len(chunks), 0, _NullSessionManager(), None,
+        )
+        try:
+            waveform, sr, _offsets = engine.synthesize_chunks(
+                chunks,
+                language=args.language,
+                speed=args.speed,
+                instruct=args.instruct,
+                progress_callback=progress,
+            )
+        finally:
+            close_progress()
+        sample_rate = sr
+
+        if segments:
+            segments.append(generate_silence(INTER_CHAPTER_SILENCE_MS, sr))
+            cumulative_ms += INTER_CHAPTER_SILENCE_MS
+
+        chapter_start_ms = cumulative_ms
+        segments.append(waveform)
+        cumulative_ms += int(len(waveform) * 1000 / sr)
+
+        audio_chapters.append(AudioChapter(
+            title=ch.title,
+            start_ms=chapter_start_ms,
+            end_ms=cumulative_ms,
+        ))
+
+    if not segments:
+        log.error("No audio generated — every chapter was empty.")
+        sys.exit(1)
+
+    final_waveform = np.concatenate(segments)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    save_audio(final_waveform, str(output_path), sample_rate)
+    duration = get_duration_seconds(final_waveform, sample_rate)
+
+    # Tag with title, author, cover
+    meta = extract_metadata(str(input_path))
+    if meta.title or meta.author or meta.has_cover():
+        try:
+            embed_metadata(str(output_path), meta)
+        except Exception as e:
+            log.warning("Metadata embedding failed: %s", e)
+
+    # Chapter atoms — format-specific
+    if out_ext == ".m4b":
+        add_m4b_chapters(str(output_path), audio_chapters)
+    elif out_ext == ".mp3":
+        add_chapter_markers(str(output_path), audio_chapters)
+    # WAV has no chapter container; skip silently.
+
+    log.info(
+        "Saved audiobook: %s (%.1fs audio, %d chapters)",
+        output_path, duration, len(audio_chapters),
+    )
+
+
+class _NullSessionManager:
+    """No-op session manager used by _process_merged where we don't checkpoint."""
+    def update_progress(self, *args, **kwargs):
+        pass
+
+
 def _build_progress(prefix: str, total: int, start_from: int, mgr, session):
     """Build (callback, close) backed by tqdm. tqdm is a hard dependency."""
     from tqdm import tqdm
@@ -137,6 +262,17 @@ def create_parser() -> argparse.ArgumentParser:
         help="Skip tables and diagrams detected in the PDF",
     )
     parser.add_argument(
+        "--ocr",
+        action="store_true",
+        help="OCR scanned PDFs before extraction (requires ocrmypdf + tesseract)",
+    )
+    parser.add_argument(
+        "--ocr-language",
+        type=str,
+        default="eng",
+        help="Tesseract language code for --ocr, e.g. 'eng', 'pol', 'eng+pol' (default: eng)",
+    )
+    parser.add_argument(
         "--show-toc",
         action="store_true",
         help="Show table of contents and exit",
@@ -165,6 +301,11 @@ def create_parser() -> argparse.ArgumentParser:
         help="Embed chapter markers in MP3 output (requires TOC and .mp3 output)",
     )
     parser.add_argument(
+        "--merge-chapters",
+        action="store_true",
+        help="With --chapters all: produce a single audiobook file with all chapters concatenated and embedded chapter markers (best with .m4b output)",
+    )
+    parser.add_argument(
         "--model-path",
         type=str,
         default=None,
@@ -174,6 +315,11 @@ def create_parser() -> argparse.ArgumentParser:
         "--dry-run",
         action="store_true",
         help="Extract and preprocess text only, print to stdout (no TTS)",
+    )
+    parser.add_argument(
+        "--preview",
+        action="store_true",
+        help="Synthesize only the first chunk (~30s) so you can audition the voice before committing to a long run",
     )
     parser.add_argument(
         "--verbose", "-v",
@@ -207,6 +353,8 @@ def _process_single(
             max_pages=args.max_pages,
             page_range=page_range,
             skip_tables=args.skip_tables,
+            ocr=getattr(args, "ocr", False),
+            ocr_language=getattr(args, "ocr_language", "eng"),
         )
         page_texts = [(pg, preprocess(t)) for pg, t in page_texts]
         text = "\n\n".join(t for _, t in page_texts)
@@ -222,6 +370,8 @@ def _process_single(
             max_pages=args.max_pages,
             page_range=page_range,
             skip_tables=args.skip_tables,
+            ocr=getattr(args, "ocr", False),
+            ocr_language=getattr(args, "ocr_language", "eng"),
         )
         log.info("%sExtracted %d characters.", prefix, len(text))
         text = preprocess(text)
@@ -236,11 +386,36 @@ def _process_single(
         log.warning("%sNo text to synthesize, skipping.", prefix)
         return
 
+    # Auto-detect language if requested
+    from twinktalks.language_detect import resolve_language
+    resolved_language = resolve_language(args.language, text)
+    if resolved_language != args.language:
+        log.info("%sDetected language: %s", prefix, resolved_language)
+    args.language = resolved_language
+
     # Dry run
     if args.dry_run:
         print(f"\n--- {prefix}Extracted & Preprocessed Text ---\n")
         print(text)
         print(f"\n--- {len(chunks)} chunks, {word_count} words ---")
+        return
+
+    # Preview: synthesize only the first chunk so the user can audition the voice
+    if getattr(args, "preview", False):
+        from twinktalks.tts_engine import TTSEngine
+        from twinktalks.audio_utils import save_audio, get_duration_seconds
+
+        engine = TTSEngine(speaker=args.speaker, model_path=getattr(args, "model_path", None))
+        log.info("%sRendering preview of first chunk (%d chars)...",
+                 prefix, len(chunks[0].text))
+        waveform, sr = engine.synthesize(
+            chunks[0].text, language=args.language, speed=args.speed, instruct=args.instruct,
+        )
+        preview_path = output_path.with_name(f"{output_path.stem}_preview{output_path.suffix}")
+        preview_path.parent.mkdir(parents=True, exist_ok=True)
+        save_audio(waveform, str(preview_path), sr)
+        log.info("%sPreview saved: %s (%.1fs)", prefix, preview_path,
+                 get_duration_seconds(waveform, sr))
         return
 
     # Step 4: Synthesize
@@ -292,14 +467,27 @@ def _process_single(
     elapsed = time.time() - start_time
 
     # Step 5: Save
-    from twinktalks.audio_utils import save_audio, get_duration_seconds
+    from twinktalks.audio_utils import save_audio, get_duration_seconds, embed_metadata
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     save_audio(waveform, str(output_path), sample_rate)
     duration = get_duration_seconds(waveform, sample_rate)
+    out_ext = output_path.suffix.lower()
 
-    # Step 6: Embed chapter markers in MP3
-    if use_chapter_markers and output_path.suffix.lower() == ".mp3" and _offsets:
+    # Step 6: Embed metadata (title, author, cover) for tagged formats
+    if out_ext in (".mp3", ".m4b"):
+        from twinktalks.book_metadata import extract_metadata
+        meta = extract_metadata(str(input_path))
+        if meta.title or meta.author or meta.has_cover():
+            embed_metadata(str(output_path), meta)
+            log.info("%sTagged: %s%s%s",
+                     prefix,
+                     f"title={meta.title!r}" if meta.title else "",
+                     f", author={meta.author!r}" if meta.author else "",
+                     ", cover" if meta.has_cover() else "")
+
+    # Step 7: Embed chapter markers in MP3
+    if use_chapter_markers and out_ext == ".mp3" and _offsets:
         from twinktalks.extractor import extract_toc
         from twinktalks.audio_utils import AudioChapter, add_chapter_markers
 
@@ -373,7 +561,16 @@ def main(argv: list[str] | None = None):
                 print(f"  {s.id}  {Path(s.pdf_path).name}  chunk {s.completed_chunk}/{s.total_chunks}  [{s.updated_at}]")
         return
 
-    # Handle --chapters all (batch mode)
+    # Handle --chapters all + --merge-chapters: single audiobook file
+    if args.chapters and args.chapters.lower() == "all" and args.merge_chapters:
+        if args.output:
+            output_path = Path(args.output)
+        else:
+            output_path = Path("output") / f"{input_path.stem}.m4b"
+        _process_merged(input_path, output_path, args, log)
+        return
+
+    # Handle --chapters all (batch mode — one file per chapter)
     if args.chapters and args.chapters.lower() == "all":
         from twinktalks.extractor import extract_toc
         chapters = extract_toc(str(input_path))

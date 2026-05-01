@@ -39,3 +39,37 @@ class TestParserChapters:
         parser = create_parser()
         args = parser.parse_args(["test.pdf", "--chapters", "3"])
         assert args.chapters == "3"
+
+    def test_merge_chapters_flag(self):
+        parser = create_parser()
+        args = parser.parse_args(["test.pdf", "--chapters", "all", "--merge-chapters"])
+        assert args.merge_chapters is True
+
+    def test_merge_chapters_default_false(self):
+        parser = create_parser()
+        args = parser.parse_args(["test.pdf"])
+        assert args.merge_chapters is False
+
+    def test_preview_flag(self):
+        parser = create_parser()
+        args = parser.parse_args(["test.pdf", "--preview"])
+        assert args.preview is True
+
+    def test_preview_default_false(self):
+        parser = create_parser()
+        args = parser.parse_args(["test.pdf"])
+        assert args.preview is False
+
+
+class TestPreviewVoice:
+    def test_no_files_returns_error(self):
+        from twinktalks.web import preview_voice
+        status, audio = preview_voice(None, 1, 1, "", "Aiden", "English", 1.0, True, False, "")
+        assert "NO FILE" in status
+        assert audio is None
+
+    def test_empty_files_returns_error(self):
+        from twinktalks.web import preview_voice
+        status, audio = preview_voice([], 1, 1, "", "Aiden", "English", 1.0, True, False, "")
+        assert "NO FILE" in status
+        assert audio is None
