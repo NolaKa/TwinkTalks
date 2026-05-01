@@ -10,8 +10,15 @@ import { SettingsList } from './components/SettingsList'
 import { VoicePicker } from './components/VoicePicker'
 import { VoiceStyleControls } from './components/VoiceStyleControls'
 import { useTheme } from './hooks/useTheme'
-import type {
-  ActiveJobInfo, FileMetadata, Language, LibraryEntry, Preset, Settings, Voice,
+import {
+  SUPPORTED_EXTENSIONS,
+  type ActiveJobInfo,
+  type FileMetadata,
+  type Language,
+  type LibraryEntry,
+  type Preset,
+  type Settings,
+  type Voice,
 } from './types'
 
 const DEFAULT_SETTINGS: Settings = {
@@ -54,7 +61,7 @@ export function App() {
 
   // Boot
   useEffect(() => {
-    api.voices().then(setVoices).catch(e => setError(String(e)))
+    api.voices().then(setVoices).catch(e => setError(prettyError(e)))
     api.languages().then(setLanguages).catch(() => {})
     api.presets().then(setPresets).catch(() => {})
     api.library().then(setLibrary).catch(() => {})
@@ -92,6 +99,18 @@ export function App() {
 
   const handleUpload = useCallback(async (raw: File) => {
     setError(null)
+    // Reject unsupported file types client-side so the user sees a clear,
+    // friendly message instead of a raw 415 from the server.
+    const lower = raw.name.toLowerCase()
+    const ext = lower.includes('.') ? lower.slice(lower.lastIndexOf('.')) : ''
+    if (!SUPPORTED_EXTENSIONS.includes(ext as typeof SUPPORTED_EXTENSIONS[number])) {
+      setError(
+        ext
+          ? `"${raw.name}" — ${ext} files aren't supported. TwinkTalks reads ${SUPPORTED_EXTENSIONS.join(', ')}.`
+          : `"${raw.name}" has no file extension. TwinkTalks reads ${SUPPORTED_EXTENSIONS.join(', ')}.`,
+      )
+      return
+    }
     setBusy(true)
     try {
       if (file) await api.deleteFile(file.id).catch(() => {})
@@ -99,7 +118,7 @@ export function App() {
       setFile(meta)
       applySmartDefaults(meta)
     } catch (e) {
-      setError(String(e))
+      setError(prettyError(e))
     } finally {
       setBusy(false)
     }
@@ -139,7 +158,7 @@ export function App() {
       setPresets(fresh)
       setSaveName('')
     } catch (e) {
-      setError(String(e))
+      setError(prettyError(e))
     }
   }, [voices, settings])
 
@@ -149,7 +168,7 @@ export function App() {
       const fresh = await api.presets()
       setPresets(fresh)
     } catch (e) {
-      setError(String(e))
+      setError(prettyError(e))
     }
   }, [])
 
@@ -218,7 +237,7 @@ export function App() {
         setActiveJob(null)
       })
     } catch (e) {
-      setError(String(e))
+      setError(prettyError(e))
       setBusy(false)
     }
   }, [file, settings, busy])
@@ -329,6 +348,26 @@ export function App() {
     </>
   )
 }
+
+/** Strip raw status codes + JSON wrappers from fetch errors so the panel
+ *  shows the human-readable detail instead of `Error: 415 {"detail":"…"}`. */
+function prettyError(e: unknown): string {
+  const msg = e instanceof Error ? e.message : String(e)
+  // jsonOrThrow throws "Error: <status> <body>". Pull <body> out and try to
+  // unwrap a {detail: ...} payload.
+  const m = /^\s*\d{3}\s+(.+)$/.exec(msg)
+  const body = m ? m[1] : msg
+  try {
+    const parsed = JSON.parse(body)
+    if (parsed && typeof parsed === 'object' && 'detail' in parsed) {
+      return String(parsed.detail)
+    }
+  } catch {
+    // not JSON, fall through
+  }
+  return body.replace(/^Error:\s*/, '')
+}
+
 
 function ScannedNotice({ forced }: { forced: boolean }) {
   return (
