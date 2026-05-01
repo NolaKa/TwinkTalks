@@ -5,7 +5,10 @@ type Props = {
   accept?: string
 }
 
-export function Dropzone({ onPick, accept = '.pdf,.epub,.md,.txt,.html,.htm' }: Props) {
+export function Dropzone({
+  onPick,
+  accept = '.pdf,.epub,.md,.txt,.html,.htm,.docx,.rtf,.fb2',
+}: Props) {
   const [drag, setDrag] = useState(false)
   const ref = useRef<HTMLInputElement>(null)
   return (
@@ -60,7 +63,9 @@ export function Dropzone({ onPick, accept = '.pdf,.epub,.md,.txt,.html,.htm' }: 
         </svg>
       </div>
       <div style={{ fontSize: 16, fontWeight: 500, marginBottom: 4 }}>Drop a file or click to browse</div>
-      <div style={{ color: 'var(--dim)', fontSize: 13 }}>PDF, EPUB, Markdown, TXT, HTML up to 200 MB</div>
+      <div style={{ color: 'var(--dim)', fontSize: 13 }}>
+        PDF, EPUB, DOCX, RTF, FB2, Markdown, TXT, HTML up to 200 MB
+      </div>
       <div
         style={{ marginTop: 20, display: 'flex', gap: 8, justifyContent: 'center' }}
         onClick={e => e.stopPropagation()}

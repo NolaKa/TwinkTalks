@@ -1,4 +1,9 @@
-export const SUPPORTED_EXTENSIONS = ['.pdf', '.epub', '.md', '.txt', '.html', '.htm'] as const
+export const SUPPORTED_EXTENSIONS = [
+  '.pdf', '.epub',
+  '.md', '.txt',
+  '.html', '.htm',
+  '.docx', '.rtf', '.fb2',
+] as const
 
 export type Voice = {
   id: string

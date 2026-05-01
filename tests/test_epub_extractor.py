@@ -88,7 +88,7 @@ class TestExtractorRouter:
     def test_detect_unsupported(self):
         from twinktalks.extractor import detect_file_type
         with pytest.raises(ValueError, match="Unsupported"):
-            detect_file_type("test.docx")
+            detect_file_type("test.mobi")
 
     def test_router_epub(self, sample_epub):
         from twinktalks.extractor import extract_text

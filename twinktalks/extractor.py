@@ -4,7 +4,12 @@ from pathlib import Path
 
 from twinktalks.toc import Chapter
 
-SUPPORTED_EXTENSIONS = {".pdf", ".epub", ".md", ".txt", ".html", ".htm"}
+SUPPORTED_EXTENSIONS = {
+    ".pdf", ".epub",
+    ".md", ".txt",
+    ".html", ".htm",
+    ".docx", ".rtf", ".fb2",
+}
 
 # Plain-text formats: PDF-specific kwargs are dropped silently.
 _PLAIN_TEXT_EXTS = {".md", ".txt"}
@@ -50,6 +55,15 @@ def extract_text(file_path: str, **kwargs) -> str:
     if ext in _HTML_EXTS:
         from twinktalks.html_extractor import extract_text as html_extract
         return html_extract(file_path, **_strip_pdf_kwargs(kwargs))
+    if ext == ".docx":
+        from twinktalks.docx_extractor import extract_text as docx_extract
+        return docx_extract(file_path, **_strip_pdf_kwargs(kwargs))
+    if ext == ".rtf":
+        from twinktalks.rtf_extractor import extract_text as rtf_extract
+        return rtf_extract(file_path, **_strip_pdf_kwargs(kwargs))
+    if ext == ".fb2":
+        from twinktalks.fb2_extractor import extract_text as fb2_extract
+        return fb2_extract(file_path, **_strip_pdf_kwargs(kwargs))
     return ""
 
 
@@ -74,6 +88,15 @@ def extract_text_by_page(file_path: str, **kwargs) -> list[tuple[int, str]]:
     if ext in _HTML_EXTS:
         from twinktalks.html_extractor import extract_text_by_page as html_by_page
         return html_by_page(file_path, **_strip_pdf_kwargs(kwargs))
+    if ext == ".docx":
+        from twinktalks.docx_extractor import extract_text_by_page as docx_by_page
+        return docx_by_page(file_path, **_strip_pdf_kwargs(kwargs))
+    if ext == ".rtf":
+        from twinktalks.rtf_extractor import extract_text_by_page as rtf_by_page
+        return rtf_by_page(file_path, **_strip_pdf_kwargs(kwargs))
+    if ext == ".fb2":
+        from twinktalks.fb2_extractor import extract_text_by_page as fb2_by_page
+        return fb2_by_page(file_path, **_strip_pdf_kwargs(kwargs))
     return []
 
 
@@ -86,8 +109,6 @@ def get_item_count(file_path: str) -> int:
     if ext == ".epub":
         from twinktalks.epub_extractor import get_chapter_count
         return get_chapter_count(file_path)
-    if ext in _PLAIN_TEXT_EXTS or ext in _HTML_EXTS:
-        return 1
     return 1
 
 
@@ -106,4 +127,11 @@ def extract_toc(file_path: str) -> list[Chapter]:
     if ext in _HTML_EXTS:
         from twinktalks.html_extractor import extract_toc as html_toc
         return html_toc(file_path)
+    if ext == ".docx":
+        from twinktalks.docx_extractor import extract_toc as docx_toc
+        return docx_toc(file_path)
+    if ext == ".fb2":
+        from twinktalks.fb2_extractor import extract_toc as fb2_toc
+        return fb2_toc(file_path)
+    # .rtf has no structured TOC
     return []
