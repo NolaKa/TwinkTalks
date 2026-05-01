@@ -23,6 +23,10 @@ dependencies = [
     "tqdm>=4.66",
     "gradio>=5.0",
     "langdetect>=1.0",
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.30",
+    "sse-starlette>=2.1",
+    "python-multipart>=0.0.9",
 ]
 
 [project.optional-dependencies]
@@ -33,6 +37,7 @@ ocr = ["ocrmypdf>=16.0"]
 [project.scripts]
 twinktalks = "twinktalks.cli:main"
 twinktalks-web = "twinktalks.web:main"
+twinktalks-server = "twinktalks.api:main"
 
 [tool.setuptools.packages.find]
 include = ["twinktalks*"]

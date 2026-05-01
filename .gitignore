@@ -29,3 +29,7 @@ models/
 # Claude Code
 CLAUDE.md
 .claude/
+
+# Design handoff (kept locally, not committed)
+*.zip
+.design_handoff/
