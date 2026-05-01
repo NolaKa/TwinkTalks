@@ -17,17 +17,22 @@ from twinktalks.presets import (
 router = APIRouter(tags=["static"])
 
 
-# Map the design's 6 voice slots to actual Qwen3-TTS-CustomVoice speaker IDs.
-# Qwen exposes 9 voices total: aiden, dylan, eric, ono_anna, ryan, serena,
-# sohee, uncle_fu, vivian. We surface six in the UI matched to the design's
-# six tags; the CLI's --voice flag still allows any of the nine.
+# All nine Qwen3-TTS-CustomVoice speakers, surfaced verbatim. id == speaker so
+# the UI and the model talk about the same identifier — no translation table,
+# no "supported speakers" mismatch like the one that bit the early build.
+# Display names are the raw IDs cleaned up for capitalization (underscores to
+# spaces, title-cased). Avatar tags are best-effort character hints; users
+# should preview-and-pick rather than rely on the labels.
 _VOICES = [
-    {"id": "aiden", "name": "Aiden", "speaker": "aiden",   "tag": "Warm",     "avatarColor": "#e5b8a3"},
-    {"id": "sage",  "name": "Sage",  "speaker": "serena",  "tag": "Calm",     "avatarColor": "#b3d4c5"},
-    {"id": "rio",   "name": "Rio",   "speaker": "vivian",  "tag": "Bright",   "avatarColor": "#f0c6e0"},
-    {"id": "koen",  "name": "Koen",  "speaker": "dylan",   "tag": "Deep",     "avatarColor": "#a3b3d4"},
-    {"id": "iris",  "name": "Iris",  "speaker": "sohee",   "tag": "Whisper",  "avatarColor": "#e0d4a3"},
-    {"id": "milo",  "name": "Milo",  "speaker": "ryan",    "tag": "Narrator", "avatarColor": "#c8b3d4"},
+    {"id": "aiden",    "name": "Aiden",    "speaker": "aiden",    "tag": "Warm",      "avatarColor": "#e5b8a3"},
+    {"id": "dylan",    "name": "Dylan",    "speaker": "dylan",    "tag": "Deep",      "avatarColor": "#a3b3d4"},
+    {"id": "eric",     "name": "Eric",     "speaker": "eric",     "tag": "Bright",    "avatarColor": "#f4d8b3"},
+    {"id": "ono_anna", "name": "Anna",     "speaker": "ono_anna", "tag": "Calm",      "avatarColor": "#b3d4c5"},
+    {"id": "ryan",     "name": "Ryan",     "speaker": "ryan",     "tag": "Narrator",  "avatarColor": "#c8b3d4"},
+    {"id": "serena",   "name": "Serena",   "speaker": "serena",   "tag": "Gentle",    "avatarColor": "#d4e3c5"},
+    {"id": "sohee",    "name": "Sohee",    "speaker": "sohee",    "tag": "Whisper",   "avatarColor": "#e0d4a3"},
+    {"id": "uncle_fu", "name": "Uncle Fu", "speaker": "uncle_fu", "tag": "Mature",    "avatarColor": "#c5d4f0"},
+    {"id": "vivian",   "name": "Vivian",   "speaker": "vivian",   "tag": "Lively",    "avatarColor": "#f0c6e0"},
 ]
 
 _LANGUAGES = [

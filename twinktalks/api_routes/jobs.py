@@ -54,16 +54,33 @@ def _model_is_cached() -> bool:
     """Best-effort check whether Qwen3-TTS weights are already on disk.
 
     Returns False if the next load would have to fetch ~3.5 GB from the network.
+    Honors HUGGINGFACE_HUB_CACHE / MODELSCOPE_CACHE env vars (which TwinkTalks
+    points at ~/.twinktalks/cache/), and also checks the legacy ~/.cache paths
+    so users coming from older installs aren't told they need to re-download.
     """
     custom = os.environ.get("TWINKTALKS_MODEL_PATH")
     if custom:
         return Path(custom).expanduser().is_dir()
-    hf_cache = Path.home() / ".cache" / "huggingface" / "hub"
-    if (hf_cache / "models--Qwen--Qwen3-TTS-12Hz-1.7B-CustomVoice").exists():
-        return True
-    ms_cache = Path.home() / ".cache" / "modelscope" / "hub"
-    if (ms_cache / "Qwen" / "Qwen3-TTS-12Hz-1.7B-CustomVoice").exists():
-        return True
+
+    hf_candidates = [
+        Path(os.environ["HUGGINGFACE_HUB_CACHE"])
+        if os.environ.get("HUGGINGFACE_HUB_CACHE") else None,
+        Path.home() / ".twinktalks" / "cache" / "huggingface" / "hub",
+        Path.home() / ".cache" / "huggingface" / "hub",
+    ]
+    for cache in hf_candidates:
+        if cache and (cache / "models--Qwen--Qwen3-TTS-12Hz-1.7B-CustomVoice").exists():
+            return True
+
+    ms_candidates = [
+        Path(os.environ["MODELSCOPE_CACHE"])
+        if os.environ.get("MODELSCOPE_CACHE") else None,
+        Path.home() / ".twinktalks" / "cache" / "modelscope",
+        Path.home() / ".cache" / "modelscope" / "hub",
+    ]
+    for cache in ms_candidates:
+        if cache and (cache / "Qwen" / "Qwen3-TTS-12Hz-1.7B-CustomVoice").exists():
+            return True
     return False
 
 

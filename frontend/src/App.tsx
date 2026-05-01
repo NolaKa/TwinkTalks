@@ -304,7 +304,7 @@ export function App() {
             <div>
               <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 4 }}>Voice</div>
               <div style={{ fontSize: 12, color: 'var(--dim)', marginBottom: 12 }}>
-                6 presets, all from Qwen3-TTS.
+                9 voices from Qwen3-TTS — pick one and audition with the preset prompt below.
               </div>
               <VoicePicker
                 voices={voices}

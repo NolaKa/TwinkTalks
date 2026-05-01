@@ -33,7 +33,7 @@ Convert academic papers, textbooks, e-books, notes, and web pages into natural-s
 - **CLI session resume** — saves progress per chunk to `~/.twinktalks/sessions/<id>/` so an interrupted CLI run can continue from where it stopped (`--resume <id>`).
 - **Academic text cleanup** — removes `[1,2]` citations, `(Author et al., 2024)`, figure/table captions, URLs, DOIs, section numbers; expands abbreviations (`e.g.` → `for example`).
 - **Sentence- and page-aware chunking** — ~500-character chunks at sentence boundaries (NLTK) with cross-page paragraph stitching; each chunk records its source page for accurate chapter-marker placement.
-- **Voices** — 9 Qwen3-TTS speakers (`aiden`, `dylan`, `eric`, `ono_anna`, `ryan`, `serena`, `sohee`, `uncle_fu`, `vivian`); the web UI surfaces 6 of them under design-friendly names (Aiden, Sage, Rio, Koen, Iris, Milo). The CLI's `--speaker` flag is case-insensitive.
+- **Voices** — all 9 Qwen3-TTS-CustomVoice speakers (`aiden`, `dylan`, `eric`, `ono_anna`, `ryan`, `serena`, `sohee`, `uncle_fu`, `vivian`) surfaced verbatim in the web UI as 3×3 tiles. The CLI's `--speaker` flag is case-insensitive.
 - **10+ languages** — English, Chinese, Japanese, Korean, German, French, Russian, Portuguese, Spanish, Italian.
 
 ## Requirements
@@ -76,7 +76,7 @@ twinktalks-server
 The interface is a React + Vite SPA served by FastAPI. It exposes:
 
 - **Drop zone / file card** — drag-and-drop or click to upload PDF, EPUB, Markdown, TXT, HTML. Once loaded, you see file size, page/chapter count, word count, and an estimated audio duration. Title and cover art come from the document's metadata.
-- **Voice picker** — a 3×2 grid of six voices mapped to Qwen3-TTS speakers (Aiden, Sage, Rio, Koen, Iris, Milo).
+- **Voice picker** — a 3×3 grid of all nine Qwen3-TTS speakers (Aiden, Dylan, Eric, Anna, Ryan, Serena, Sohee, Uncle Fu, Vivian).
 - **Voice style** — collapsible row right under the voice tiles. Click to expand a panel with a *built-in or saved* preset dropdown, a *Save current as…* input + button, an instruct textarea, and a list of your saved presets with ★ delete.
 - **Settings list** — Language (with `Auto`), Speed slider (0.5–2.0×), Format segmented (WAV/MP3/M4B), Chapter markers toggle, OCR fallback toggle.
 - **Advanced** (inside Settings list) — OCR language, *skip references*, *skip tables*, and *merge all chapters into one audiobook*.
@@ -267,7 +267,7 @@ Uses [Qwen3-TTS-12Hz-1.7B-CustomVoice](https://huggingface.co/Qwen/Qwen3-TTS-12H
 - `attn_implementation="sdpa"` (FlashAttention unavailable on macOS)
 - `dtype=float16` on MPS/CUDA, `float32` on CPU
 
-The model (~3.5GB) downloads automatically on first run. **No HuggingFace account is required** — the model is public. If you hit rate limits, TwinkTalks will automatically try [ModelScope](https://modelscope.cn/models/Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice) as a fallback.
+The model (~3.5GB) downloads automatically on first run into `~/.twinktalks/cache/` (HuggingFace + ModelScope caches are redirected there so the weights live next to the rest of TwinkTalks' state instead of polluting `~/.cache/huggingface/`). **No HuggingFace account is required** — the model is public. If you hit rate limits, TwinkTalks will automatically try [ModelScope](https://modelscope.cn/models/Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice) as a fallback.
 
 ### Download options
 

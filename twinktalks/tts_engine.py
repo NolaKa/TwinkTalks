@@ -2,7 +2,18 @@
 
 import logging
 import os
+from pathlib import Path
 from typing import Callable
+
+# Redirect HuggingFace + ModelScope caches into ~/.twinktalks/cache so the
+# 3.5 GB Qwen weights live next to the rest of TwinkTalks' state instead of
+# polluting the global ~/.cache/huggingface tree. Set BEFORE the first
+# transformers / huggingface_hub import — they read these on module load.
+_TT_CACHE = Path.home() / ".twinktalks" / "cache"
+_TT_CACHE.mkdir(parents=True, exist_ok=True)
+os.environ.setdefault("HF_HOME", str(_TT_CACHE / "huggingface"))
+os.environ.setdefault("HUGGINGFACE_HUB_CACHE", str(_TT_CACHE / "huggingface" / "hub"))
+os.environ.setdefault("MODELSCOPE_CACHE", str(_TT_CACHE / "modelscope"))
 
 import numpy as np
 import torch
@@ -33,9 +44,24 @@ from twinktalks.config import (
 
 # Force HuggingFace to show download progress bars
 os.environ.setdefault("HF_HUB_ENABLE_HF_TRANSFER", "0")
-os.environ.setdefault("TRANSFORMERS_VERBOSITY", "info")
+# Keep model-load logs visible (the user wants to see "downloading… / loading…")
+# but silence the chunk-by-chunk "Setting pad_token_id to eos_token_id" spam
+# that fires once per call — it makes the terminal look frozen.
+os.environ.setdefault("TRANSFORMERS_VERBOSITY", "warning")
 
 logger = logging.getLogger(__name__)
+
+
+def _silence_per_call_noise() -> None:
+    """Drop the transformers `Setting pad_token_id…` info line per generation.
+
+    Imported lazily so we don't pull transformers in during `import twinktalks`.
+    """
+    try:
+        import transformers
+        transformers.logging.set_verbosity_warning()
+    except Exception:
+        pass
 
 
 class SynthesisError(Exception):
@@ -191,6 +217,8 @@ class TTSEngine:
         """Post-load setup: MPS sync and success message."""
         if self.device == "mps" and torch.backends.mps.is_available():
             torch.mps.synchronize()
+        # Suppress per-chunk transformers info chatter once model is loaded.
+        _silence_per_call_noise()
         print("[TwinkTalks] Model loaded successfully!")
         logger.info("Model loaded successfully.")
 
