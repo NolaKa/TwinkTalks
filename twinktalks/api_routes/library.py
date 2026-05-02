@@ -16,9 +16,25 @@ _MEDIA_TYPE = {".wav": "audio/wav", ".mp3": "audio/mpeg", ".m4b": "audio/mp4"}
 
 
 def _library_dir() -> Path:
-    # Mirror the location used by jobs._library_dir(); migration happens there.
+    # Mirror the location used by jobs._library_dir(). Run the same migration
+    # here too so users who never trigger a synthesis (just browse the
+    # library) still get their old files moved out of ~/.twinktalks/library/.
     d = Path.home() / "Audiobooks"
     d.mkdir(parents=True, exist_ok=True)
+    legacy = Path.home() / ".twinktalks" / "library"
+    if legacy.exists():
+        for f in legacy.iterdir():
+            if f.is_file():
+                target = d / f.name
+                if not target.exists():
+                    try:
+                        f.rename(target)
+                    except OSError:
+                        pass
+        try:
+            legacy.rmdir()
+        except OSError:
+            pass
     return d
 
 
