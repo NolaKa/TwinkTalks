@@ -1,11 +1,12 @@
 """Library: previously generated audiobooks."""
 
 import logging
+import re
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse, Response
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/library", tags=["library"])
@@ -148,3 +149,48 @@ def cover(entry_id: str) -> Response:
 def delete_entry(entry_id: str) -> None:
     path = _resolve(entry_id)
     path.unlink(missing_ok=True)
+
+
+class RenameRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+
+
+# Filesystem-unsafe characters: path separators + reserved chars on Windows-style
+# filesystems. Newlines and control chars get rejected too. Extension is fixed
+# server-side, so the user can only rename the stem.
+_UNSAFE = re.compile(r'[\\/:*?"<>|\x00-\x1f]')
+
+
+def _safe_stem(raw: str) -> str:
+    cleaned = _UNSAFE.sub("", raw).strip().strip(".")
+    if not cleaned:
+        raise HTTPException(400, "Filename cannot be empty after sanitization.")
+    return cleaned
+
+
+@router.patch("/{entry_id}", response_model=LibraryEntry)
+def rename_entry(entry_id: str, body: RenameRequest) -> LibraryEntry:
+    path = _resolve(entry_id)
+    new_stem = _safe_stem(Path(body.name).stem or body.name)
+    new_path = path.with_name(f"{new_stem}{path.suffix}")
+    if new_path == path:
+        # Nothing to do — return the current entry untouched.
+        info = _read_tags(path)
+        return LibraryEntry(
+            id=path.name, name=path.name, title=info["title"], author=info["author"],
+            duration_s=info["duration_s"], size_bytes=path.stat().st_size,
+            format=path.suffix.lower().lstrip("."),
+            audio_url=f"/api/library/{path.name}/audio",
+            cover_url=f"/api/library/{path.name}/cover" if info["has_cover"] else None,
+        )
+    if new_path.exists():
+        raise HTTPException(409, f"A file named '{new_path.name}' already exists in the library.")
+    path.rename(new_path)
+    info = _read_tags(new_path)
+    return LibraryEntry(
+        id=new_path.name, name=new_path.name, title=info["title"], author=info["author"],
+        duration_s=info["duration_s"], size_bytes=new_path.stat().st_size,
+        format=new_path.suffix.lower().lstrip("."),
+        audio_url=f"/api/library/{new_path.name}/audio",
+        cover_url=f"/api/library/{new_path.name}/cover" if info["has_cover"] else None,
+    )

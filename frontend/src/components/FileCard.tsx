@@ -25,11 +25,12 @@ type Props = {
   file: FileMetadata
   onReplace: () => void
   onPick: (file: File) => void  // accept a fresh drop on the card itself
+  onPreviewText: () => void
   /** Speed slider value — duration estimate scales by 1/speed. Defaults to 1.0. */
   speedFactor?: number
 }
 
-export function FileCard({ file, onReplace, onPick, speedFactor = 1 }: Props) {
+export function FileCard({ file, onReplace, onPick, onPreviewText, speedFactor = 1 }: Props) {
   const adjustedDuration =
     file.est_duration_s > 0 && speedFactor > 0
       ? file.est_duration_s / speedFactor
@@ -99,21 +100,34 @@ export function FileCard({ file, onReplace, onPick, speedFactor = 1 }: Props) {
           )}
         </div>
       </div>
-      <button
-        onClick={onReplace}
-        title="Drop a new file on this card, or click to clear"
-        style={{
-          background: 'transparent',
-          border: '1px solid var(--line)',
-          borderRadius: 6,
-          padding: '6px 12px',
-          fontSize: 12,
-          color: 'var(--dim)',
-          cursor: 'pointer',
-        }}
-      >
-        Replace
-      </button>
+      <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+        <button
+          onClick={onPreviewText}
+          title="See the exact text TwinkTalks will read — citations stripped, references cut, etc."
+          style={iconActionStyle}
+        >
+          Preview text
+        </button>
+        <button
+          onClick={onReplace}
+          title="Drop a new file on this card, or click to clear"
+          style={iconActionStyle}
+        >
+          Replace
+        </button>
+      </div>
     </div>
   )
+}
+
+const iconActionStyle: React.CSSProperties = {
+  background: 'transparent',
+  border: '1px solid var(--line)',
+  borderRadius: 6,
+  padding: '6px 12px',
+  fontSize: 12,
+  color: 'var(--dim)',
+  cursor: 'pointer',
+  fontFamily: 'inherit',
+  whiteSpace: 'nowrap',
 }

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { api } from './api/client'
 import { ActiveJob } from './components/ActiveJob'
+import { AudioPlayer } from './components/AudioPlayer'
 import { Dropzone } from './components/Dropzone'
 import { FileCard } from './components/FileCard'
 import { GenerateButton } from './components/GenerateButton'
@@ -8,6 +9,7 @@ import { Hero } from './components/Hero'
 import { Library } from './components/Library'
 import { ScopePicker } from './components/ScopePicker'
 import { SettingsList } from './components/SettingsList'
+import { TextPreviewModal } from './components/TextPreviewModal'
 import { VoicePicker } from './components/VoicePicker'
 import { VoiceStyleControls } from './components/VoiceStyleControls'
 import { useTheme } from './hooks/useTheme'
@@ -63,7 +65,11 @@ export function App() {
   const [busy, setBusy] = useState(false)
   const [currentJobId, setCurrentJobId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  // Which job action errored most recently — drives the "Try again" button.
+  // Null when there's no retryable failure (e.g. an upload error).
+  const [lastFailedMode, setLastFailedMode] = useState<'generate' | 'preview' | null>(null)
   const [currentAudio, setCurrentAudio] = useState<{ url: string; name: string } | null>(null)
+  const [previewTextOpen, setPreviewTextOpen] = useState(false)
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const eventSourceRef = useRef<EventSource | null>(null)
 
@@ -209,6 +215,7 @@ export function App() {
   ) => {
     if (!file || busy) return
     setError(null)
+    setLastFailedMode(null)
     setBusy(true)
     try {
       const { job_id } = await starter()
@@ -290,12 +297,14 @@ export function App() {
         const data = ev.data ? JSON.parse(ev.data) : { message: 'Stream closed unexpectedly' }
         es.close()
         setError(data.message || `${mode === 'preview' ? 'Preview' : 'Synthesis'} failed`)
+        setLastFailedMode(mode)
         setBusy(false)
         setActiveJob(null)
         setCurrentJobId(null)
       })
     } catch (e) {
       setError(prettyError(e))
+      setLastFailedMode(mode)
       setBusy(false)
     }
   }, [file, busy])
@@ -315,6 +324,19 @@ export function App() {
       'preview',
     )
   }, [file, settings, startJobAndStream])
+
+  const handleRetry = useCallback(() => {
+    if (lastFailedMode === 'preview') {
+      void handlePreview()
+    } else if (lastFailedMode === 'generate') {
+      void handleGenerate()
+    }
+  }, [lastFailedMode, handlePreview, handleGenerate])
+
+  const handleDismissError = useCallback(() => {
+    setError(null)
+    setLastFailedMode(null)
+  }, [])
 
   const handleCancel = useCallback(async () => {
     // Optimistic teardown — close the SSE and reset state immediately so
@@ -369,6 +391,28 @@ export function App() {
     setCurrentAudio({ url: entry.audio_url, name: entry.name })
   }, [])
 
+  const handleRename = useCallback(async (entry: LibraryEntry, newStem: string) => {
+    try {
+      const updated = await api.renameLibraryEntry(entry.id, newStem)
+      setLibrary(prev => prev.map(e => (e.id === entry.id ? updated : e)))
+      // If the renamed entry is currently loaded in the audio player, swap
+      // the URL so the player keeps working after the rename.
+      if (currentAudio?.url === entry.audio_url) {
+        setCurrentAudio({ url: updated.audio_url, name: updated.name })
+        if (audioRef.current) {
+          const wasPlaying = !audioRef.current.paused
+          const t = audioRef.current.currentTime
+          audioRef.current.src = updated.audio_url
+          audioRef.current.currentTime = t
+          if (wasPlaying) audioRef.current.play().catch(() => {})
+        }
+      }
+    } catch (e) {
+      setError(prettyError(e))
+      throw e
+    }
+  }, [currentAudio])
+
   const handleDelete = useCallback(async (entry: LibraryEntry) => {
     const ok = window.confirm(
       `Delete "${entry.title || entry.name}" from your library?\n\nThis removes the file from ~/Audiobooks/ — there's no undo.`
@@ -402,6 +446,7 @@ export function App() {
                   file={file}
                   onReplace={handleReplace}
                   onPick={handleUpload}
+                  onPreviewText={() => setPreviewTextOpen(true)}
                   speedFactor={settings.speed}
                 />
                 {file.needs_ocr && (
@@ -457,48 +502,62 @@ export function App() {
 
             {error && (
               <div
+                role="alert"
                 style={{
                   border: '1px solid var(--line)',
                   borderRadius: 8,
                   padding: 12,
                   color: '#dc2626',
                   fontSize: 12,
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: 12,
                 }}
               >
-                {error}
+                <span style={{ flex: 1 }}>{error}</span>
+                <span style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                  {lastFailedMode && file && !busy && (
+                    <button
+                      onClick={handleRetry}
+                      style={{
+                        border: '1px solid currentColor',
+                        background: 'transparent',
+                        color: '#dc2626',
+                        borderRadius: 6,
+                        padding: '4px 10px',
+                        fontSize: 11,
+                        fontWeight: 500,
+                        fontFamily: 'inherit',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      Try again
+                    </button>
+                  )}
+                  <button
+                    onClick={handleDismissError}
+                    aria-label="Dismiss error"
+                    title="Dismiss"
+                    style={{
+                      border: 'none',
+                      background: 'transparent',
+                      color: '#dc2626',
+                      cursor: 'pointer',
+                      padding: 0,
+                      width: 20,
+                      height: 20,
+                      fontSize: 16,
+                      lineHeight: 1,
+                      opacity: 0.7,
+                    }}
+                  >
+                    ×
+                  </button>
+                </span>
               </div>
             )}
 
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              <audio ref={audioRef} controls style={{ flex: 1, minWidth: 0 }} />
-              {currentAudio && (
-                <a
-                  href={currentAudio.url}
-                  download={currentAudio.name}
-                  title={`Download ${currentAudio.name}`}
-                  style={{
-                    flexShrink: 0,
-                    width: 36,
-                    height: 36,
-                    display: 'inline-grid',
-                    placeItems: 'center',
-                    border: '1px solid var(--line)',
-                    borderRadius: 8,
-                    background: 'var(--bg)',
-                    color: 'var(--ink)',
-                    textDecoration: 'none',
-                    cursor: 'pointer',
-                    transition: 'border-color 120ms ease, background 120ms ease',
-                  }}
-                  onMouseEnter={e => { e.currentTarget.style.background = 'var(--bg-soft)' }}
-                  onMouseLeave={e => { e.currentTarget.style.background = 'var(--bg)' }}
-                >
-                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M7 1v9M3.5 6.5L7 10l3.5-3.5M2 12.5h10" />
-                  </svg>
-                </a>
-              )}
-            </div>
+            <AudioPlayer audioRef={audioRef} current={currentAudio} />
 
             <div
               style={{
@@ -577,7 +636,12 @@ export function App() {
           <aside>
             <div style={{ position: 'sticky', top: 32, display: 'flex', flexDirection: 'column', gap: 16 }}>
               <ActiveJob job={activeJob} />
-              <Library entries={library} onPlay={handlePlay} onDelete={handleDelete} />
+              <Library
+                entries={library}
+                onPlay={handlePlay}
+                onDelete={handleDelete}
+                onRename={handleRename}
+              />
               <div style={{ fontSize: 11, color: 'var(--dim-2)', padding: '0 4px', lineHeight: 1.5 }}>
                 Local-first. Audio is processed on this machine; nothing is uploaded.
               </div>
@@ -585,6 +649,14 @@ export function App() {
           </aside>
         </div>
       </main>
+
+      {previewTextOpen && file && (
+        <TextPreviewModal
+          file={file}
+          settings={settings}
+          onClose={() => setPreviewTextOpen(false)}
+        />
+      )}
     </>
   )
 }

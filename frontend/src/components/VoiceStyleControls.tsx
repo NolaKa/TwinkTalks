@@ -186,6 +186,7 @@ export function VoiceStyleControls(props: Props) {
                     </span>
                     <button
                       onClick={() => onDeletePreset(p.name)}
+                      aria-label={`Delete preset ${p.name}`}
                       title="Delete preset"
                       style={{
                         border: 'none',

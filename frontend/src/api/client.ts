@@ -38,16 +38,39 @@ export const api = {
   },
   deleteFile: (id: string) =>
     fetch(`/api/files/${id}`, { method: 'DELETE' }),
-  preview: (id: string) =>
-    fetch(`/api/files/${id}/preview`).then(r =>
+  preview: (
+    id: string,
+    opts: {
+      skip_references?: boolean
+      skip_tables?: boolean
+      page_start?: number | null
+      page_end?: number | null
+      ocr?: boolean
+      ocr_language?: string
+    } = {},
+  ) => {
+    const params = new URLSearchParams()
+    for (const [k, v] of Object.entries(opts)) {
+      if (v === null || v === undefined || v === '') continue
+      params.set(k, String(v))
+    }
+    const qs = params.toString()
+    return fetch(`/api/files/${id}/preview${qs ? `?${qs}` : ''}`).then(r =>
       jsonOrThrow<{ text: string; word_count: number; char_count: number }>(r),
-    ),
+    )
+  },
   fileCoverUrl: (id: string) => `/api/files/${id}/cover`,
 
   // Library
   library: () => fetch('/api/library').then(r => jsonOrThrow<LibraryEntry[]>(r)),
   deleteLibraryEntry: (id: string) =>
     fetch(`/api/library/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  renameLibraryEntry: (id: string, name: string) =>
+    fetch(`/api/library/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name }),
+    }).then(r => jsonOrThrow<LibraryEntry>(r)),
 
   // Jobs
   startJob: (body: Record<string, unknown>) =>
