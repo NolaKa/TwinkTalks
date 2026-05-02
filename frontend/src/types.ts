@@ -66,6 +66,8 @@ export type Settings = {
   ocr_language: string
   chapter_markers: boolean
   merge_chapters: boolean
+  page_start: number | null
+  page_end: number | null
 }
 
 export type ActiveJobInfo = {

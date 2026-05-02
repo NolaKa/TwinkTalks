@@ -6,6 +6,7 @@ import { FileCard } from './components/FileCard'
 import { GenerateButton } from './components/GenerateButton'
 import { Hero } from './components/Hero'
 import { Library } from './components/Library'
+import { ScopePicker } from './components/ScopePicker'
 import { SettingsList } from './components/SettingsList'
 import { VoicePicker } from './components/VoicePicker'
 import { VoiceStyleControls } from './components/VoiceStyleControls'
@@ -34,6 +35,8 @@ const DEFAULT_SETTINGS: Settings = {
   ocr_language: 'auto',
   chapter_markers: true,
   merge_chapters: false,
+  page_start: null,
+  page_end: null,
 }
 
 /** Heuristic count: a "short" file probably wants MP3, no merging. */
@@ -58,6 +61,7 @@ export function App() {
   const [saveName, setSaveName] = useState('')
   const [activeJob, setActiveJob] = useState<ActiveJobInfo | null>(null)
   const [busy, setBusy] = useState(false)
+  const [currentJobId, setCurrentJobId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [currentAudio, setCurrentAudio] = useState<{ url: string; name: string } | null>(null)
   const audioRef = useRef<HTMLAudioElement | null>(null)
@@ -208,6 +212,7 @@ export function App() {
     setBusy(true)
     try {
       const { job_id } = await starter()
+      setCurrentJobId(job_id)
       eventSourceRef.current?.close()
       const es = new EventSource(api.jobStreamUrl(job_id))
       eventSourceRef.current = es
@@ -261,12 +266,24 @@ export function App() {
         })
         if (audioRef.current) {
           audioRef.current.src = data.audio_url
-          audioRef.current.play().catch(() => {})
+          // Auto-play only for short previews (≤60s of audition). Full
+          // generations can finish hours later when the user has walked
+          // away — surprise audio blasting from the laptop is bad UX.
+          if (mode === 'preview') {
+            audioRef.current.play().catch(() => {})
+          }
         }
         // Previews don't land in the library, so don't bother refreshing it.
         if (mode === 'generate') {
           api.library().then(setLibrary).catch(() => {})
         }
+      })
+
+      es.addEventListener('cancelled', () => {
+        es.close()
+        setBusy(false)
+        setActiveJob(null)
+        setCurrentJobId(null)
       })
 
       es.addEventListener('error', (ev: MessageEvent) => {
@@ -275,6 +292,7 @@ export function App() {
         setError(data.message || `${mode === 'preview' ? 'Preview' : 'Synthesis'} failed`)
         setBusy(false)
         setActiveJob(null)
+        setCurrentJobId(null)
       })
     } catch (e) {
       setError(prettyError(e))
@@ -297,6 +315,20 @@ export function App() {
       'preview',
     )
   }, [file, settings, startJobAndStream])
+
+  const handleCancel = useCallback(async () => {
+    // Optimistic teardown — close the SSE and reset state immediately so
+    // the user sees the UI return to idle without waiting for the server's
+    // 'cancelled' event to fly back through the stream.
+    eventSourceRef.current?.close()
+    eventSourceRef.current = null
+    setBusy(false)
+    setActiveJob(null)
+    if (currentJobId) {
+      api.cancelJob(currentJobId).catch(() => {/* best-effort */})
+    }
+    setCurrentJobId(null)
+  }, [currentJobId])
 
   // Prevent the browser from opening files dropped anywhere outside our
   // explicit drop targets. Without this, dropping on padding / FileCard /
@@ -375,6 +407,12 @@ export function App() {
                 {file.needs_ocr && (
                   <ScannedNotice forced={settings.ocr && !file.needs_ocr} />
                 )}
+                <ScopePicker
+                  file={file}
+                  pageStart={settings.page_start}
+                  pageEnd={settings.page_end}
+                  onChange={r => updateSettings({ page_start: r.start, page_end: r.end })}
+                />
               </>
             ) : (
               <Dropzone onPick={handleUpload} />
@@ -471,38 +509,68 @@ export function App() {
                 gap: 8,
               }}
             >
-              <button
-                onClick={handlePreview}
-                disabled={!file || busy}
-                title="Render only the first chunk so you can audition the voice + speed before committing."
-                style={{
-                  background: 'var(--bg)',
-                  color: !file || busy ? 'var(--dim)' : 'var(--ink)',
-                  border: '1px solid var(--line)',
-                  borderRadius: 8,
-                  padding: '14px 18px',
-                  fontSize: 13,
-                  fontWeight: 500,
-                  cursor: !file || busy ? 'not-allowed' : 'pointer',
-                  fontFamily: 'inherit',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 8,
-                  flexShrink: 0,
-                }}
-              >
-                <svg width="11" height="11" viewBox="0 0 11 11" fill="currentColor">
-                  <path d="M3 1.5l6 4-6 4z" />
-                </svg>
-                Preview
-              </button>
-              <div style={{ flex: 1 }}>
-                <GenerateButton
-                  onClick={handleGenerate}
-                  disabled={!file || busy}
-                  label={busy ? 'Working…' : 'Generate audio'}
-                />
-              </div>
+              {busy ? (
+                <button
+                  onClick={handleCancel}
+                  title="Cancel the running job and return to idle."
+                  style={{
+                    flex: 1,
+                    background: 'var(--bg)',
+                    color: 'var(--ink)',
+                    border: '1px solid var(--line-strong)',
+                    borderRadius: 8,
+                    padding: '14px',
+                    fontSize: 14,
+                    fontWeight: 500,
+                    cursor: 'pointer',
+                    fontFamily: 'inherit',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 8,
+                  }}
+                >
+                  <svg width="11" height="11" viewBox="0 0 11 11" fill="currentColor">
+                    <rect x="2" y="2" width="7" height="7" rx="1" />
+                  </svg>
+                  Cancel
+                </button>
+              ) : (
+                <>
+                  <button
+                    onClick={handlePreview}
+                    disabled={!file}
+                    title="Render only the first chunk so you can audition the voice + speed before committing."
+                    style={{
+                      background: 'var(--bg)',
+                      color: !file ? 'var(--dim)' : 'var(--ink)',
+                      border: '1px solid var(--line)',
+                      borderRadius: 8,
+                      padding: '14px 18px',
+                      fontSize: 13,
+                      fontWeight: 500,
+                      cursor: !file ? 'not-allowed' : 'pointer',
+                      fontFamily: 'inherit',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      flexShrink: 0,
+                    }}
+                  >
+                    <svg width="11" height="11" viewBox="0 0 11 11" fill="currentColor">
+                      <path d="M3 1.5l6 4-6 4z" />
+                    </svg>
+                    Preview
+                  </button>
+                  <div style={{ flex: 1 }}>
+                    <GenerateButton
+                      onClick={handleGenerate}
+                      disabled={!file}
+                      label="Generate audio"
+                    />
+                  </div>
+                </>
+              )}
             </div>
           </div>
 

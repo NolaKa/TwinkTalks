@@ -149,6 +149,21 @@ def _previews_dir() -> Path:
     return d
 
 
+def _unique_audio_path(target_dir: Path, stem: str, ext: str) -> Path:
+    """Pick a clean human-friendly filename. Hash suffixes are ugly when the
+    user opens ~/Audiobooks/ in Finder; instead we follow macOS conventions
+    and tack on " (2)", " (3)" etc. only when the same name already exists."""
+    candidate = target_dir / f"{stem}.{ext}"
+    if not candidate.exists():
+        return candidate
+    n = 2
+    while True:
+        candidate = target_dir / f"{stem} ({n}).{ext}"
+        if not candidate.exists():
+            return candidate
+        n += 1
+
+
 def _emit(job: Job, event_type: str, data: dict | None = None) -> None:
     job.queue.put({"type": event_type, "data": data or {}})
 
@@ -270,11 +285,15 @@ def _run_synthesis(job: Job) -> None:
                 final_offsets = offsets
 
         # Save final audio. Preview jobs go to a separate previews dir so they
-        # don't show up in the user's audiobook library.
+        # don't show up in the user's audiobook library, and keep their job-id
+        # suffix (collision-proof, not user-facing). Real generations get clean
+        # human-friendly filenames in ~/Audiobooks/.
         ext = s["format"] if s["format"] in ("wav", "mp3", "m4b") else "wav"
         stem = Path(stored.name).stem
-        target_dir = _previews_dir() if s.get("preview_only") else _library_dir()
-        final_path = target_dir / f"{stem}_{job.id}.{ext}"
+        if s.get("preview_only"):
+            final_path = _previews_dir() / f"{stem}_{job.id}.{ext}"
+        else:
+            final_path = _unique_audio_path(_library_dir(), stem, ext)
         save_audio(cumulative, str(final_path), sample_rate)
 
         if ext in ("mp3", "m4b"):
