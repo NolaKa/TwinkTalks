@@ -92,6 +92,7 @@ export function AudioPlayer({ audioRef, current }: Props) {
 
   return (
     <div
+      className="audio-player"
       style={{
         display: 'flex',
         alignItems: 'center',
@@ -102,6 +103,7 @@ export function AudioPlayer({ audioRef, current }: Props) {
         background: hasAudio ? 'var(--bg)' : 'var(--bg-soft)',
         minHeight: 48,
         opacity: hasAudio ? 1 : 0.6,
+        flexWrap: 'wrap',
       }}
     >
       <audio ref={audioRef} preload="metadata" style={{ display: 'none' }} />

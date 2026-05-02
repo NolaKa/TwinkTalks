@@ -89,3 +89,28 @@ input[type="range"]::-moz-range-thumb {
 input[type="range"]::-moz-range-track {
   background: transparent;
 }
+
+/* Responsive: the app is desktop-first (TTS won't run on a phone anyway),
+ * but the layout shouldn't visibly break under narrow viewports. Three
+ * relaxations as the viewport shrinks — collapse the sidebar, ease the
+ * padding, scale the hero. */
+@media (max-width: 920px) {
+  .app-grid {
+    grid-template-columns: 1fr !important;
+  }
+  .app-aside-inner {
+    position: static !important;
+  }
+  .app-main {
+    padding: 40px 24px 64px !important;
+  }
+  .hero-title {
+    font-size: clamp(32px, 7vw, 56px) !important;
+  }
+}
+
+@media (max-width: 540px) {
+  .app-main {
+    padding: 28px 16px 48px !important;
+  }
+}

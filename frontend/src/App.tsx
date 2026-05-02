@@ -436,9 +436,9 @@ export function App() {
 
   return (
     <>
-      <main style={{ maxWidth: 1080, margin: '0 auto', padding: '56px 32px 80px' }}>
+      <main className="app-main" style={{ maxWidth: 1080, margin: '0 auto', padding: '56px 32px 80px' }}>
         <Hero theme={theme} setTheme={setTheme} />
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 360px', gap: 32 }}>
+        <div className="app-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 360px', gap: 32 }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
             {file ? (
               <>
@@ -633,8 +633,8 @@ export function App() {
             </div>
           </div>
 
-          <aside>
-            <div style={{ position: 'sticky', top: 32, display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <aside className="app-aside">
+            <div className="app-aside-inner" style={{ position: 'sticky', top: 32, display: 'flex', flexDirection: 'column', gap: 16 }}>
               <ActiveJob job={activeJob} />
               <Library
                 entries={library}

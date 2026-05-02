@@ -91,7 +91,7 @@ export function FileCard({ file, onReplace, onPick, onPreviewText, speedFactor =
         >
           {file.title || file.name}
         </div>
-        <div className="mono" style={{ display: 'flex', gap: 14, fontSize: 11, color: 'var(--dim)', marginTop: 4 }}>
+        <div className="mono" style={{ display: 'flex', flexWrap: 'wrap', columnGap: 14, rowGap: 2, fontSize: 11, color: 'var(--dim)', marginTop: 4 }}>
           <span>{fmtBytes(file.size_bytes)}</span>
           {pluralUnit(file.item_count, file.ext) && <span>{pluralUnit(file.item_count, file.ext)}</span>}
           {file.word_count > 0 && <span>{file.word_count.toLocaleString()} words</span>}

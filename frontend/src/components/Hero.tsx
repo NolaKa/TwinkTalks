@@ -13,6 +13,7 @@ export function Hero({ theme, setTheme }: Props) {
         ~/twinktalks · v0.5.0
       </div>
       <h1
+        className="hero-title"
         style={{
           margin: 0,
           fontSize: 56,
